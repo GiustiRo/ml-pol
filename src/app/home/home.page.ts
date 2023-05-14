@@ -40,81 +40,37 @@ export class HomePage implements OnInit, AfterViewInit {
     this.video = document.getElementById("user-video") as HTMLVideoElement;
     this.canvasElement = document.getElementById("user-canvas") as HTMLCanvasElement;
     this.canvasCtx = this.canvasElement.getContext("2d") as CanvasRenderingContext2D;
-
   }
 
-  toggleTracking() {
-    this.tracking = !this.tracking;
-    this.tracking ? this.startTracking() : this.stopTracking();
-  }
+  toggleTracking = () => (this.tracking = !this.tracking, this.tracking ? this.startTracking() : this.stopTracking());
+
 
   startTracking() {
     (!(!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) || !this.faceLandmarker) && (console.warn("user media or ml model is not available"), false);
     // Everything is ready to go!
     navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => (this.video.srcObject = stream, this.video.addEventListener("loadeddata", predictWebcam)));
-    let lastVideoTime = -1;
-    let results: any = undefined;
-    const drawingUtils = new DrawingUtils(this.canvasCtx!);
+    let lastVideoTime = -1; let results: any = undefined; const drawingUtils = new DrawingUtils(this.canvasCtx!);
     let predictWebcam = async () => {
-      const radio = this.video.videoHeight / this.video.videoWidth;
-      this.video.style.width = this.videoWidth + "px";
-      this.video.style.height = this.videoWidth * radio + "px";
-      this.canvasElement.style.width = this.videoWidth + "px";
-      this.canvasElement.style.height = this.videoWidth * radio + "px";
-      this.canvasElement.width = this.video.videoWidth;
-      this.canvasElement.height = this.video.videoHeight;
-      // Now let's start detecting the stream.
-
-      let nowInMs = Date.now();
-      if (lastVideoTime !== this.video.currentTime) {
-        lastVideoTime = this.video.currentTime;
-        results = this.faceLandmarker.detectForVideo(this.video, nowInMs);
-      }
-      if (results.faceLandmarks) {
-        for (const landmarks of results.faceLandmarks) {
-          drawingUtils.drawConnectors(
-            landmarks,
-            FaceLandmarker.FACE_LANDMARKS_TESSELATION,
-            { color: "#C0C0C070", lineWidth: 1 }
-          );
-          drawingUtils.drawConnectors(
-            landmarks,
-            FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE,
-            { color: "#C0C0C0" }
-          );
-          // drawingUtils.drawConnectors(
-          //   landmarks,
-          //   FaceLandmarker.FACE_LANDMARKS_RIGHT_EYEBROW,
-          //   { color: "#C0C0C0" }
-          // );
-          drawingUtils.drawConnectors(
-            landmarks,
-            FaceLandmarker.FACE_LANDMARKS_LEFT_EYE,
-            { color: "#C0C0C0" }
-          );
-          // drawingUtils.drawConnectors(
-          //   landmarks,
-          //   FaceLandmarker.FACE_LANDMARKS_LEFT_EYEBROW,
-          //   { color: "#C0C0C0" }
-          // );
-        }
-      }
-      if (results.faceLandmarks && results.faceBlendshapes && results.faceBlendshapes[0]) {
-        let eyeBlinkRight = results.faceBlendshapes![0].categories.find((shape: Category) => shape.categoryName == "eyeBlinkRight");
-        if (eyeBlinkRight && eyeBlinkRight.score > 0.4) {
-          this.userDidBlink = true; alert('Guiño Guiño');
-        }
-      }
+      // Resize the canvas to match the video size.
+      this.canvasElement.width = this.video.videoWidth; this.canvasElement.height = this.video.videoHeight;
+      // Send the video frame to the model.
+      lastVideoTime !== this.video.currentTime && (lastVideoTime = this.video.currentTime, results = this.faceLandmarker.detectForVideo(this.video, Date.now()));
+      // Draw the results on the canvas (comment this out to improve performance or add even more markers like mouth, etc).
+      if (results.faceLandmarks) for (const landmarks of results.faceLandmarks) {
+        [FaceLandmarker.FACE_LANDMARKS_TESSELATION, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE, FaceLandmarker.FACE_LANDMARKS_LEFT_EYE]
+          .every((type, i) => drawingUtils.drawConnectors(landmarks, type, { color: "#C0C0C070", lineWidth: i == 0 ? 1 : 4 }))
+      };
+      // Check if the user blinked (you can customize this to expect a smile, etc). Let's assume there is only one face.
+      if (results.faceLandmarks && results.faceBlendshapes && results.faceBlendshapes[0] && results.faceBlendshapes![0].categories?.find(
+        (shape: Category) => shape?.categoryName == "eyeBlinkRight")?.score > 0.4) (this.userDidBlink = true, alert('Guiño Guiño'));
       // Call this function again to keep predicting when the browser is ready.
       this.tracking == true && window.requestAnimationFrame(predictWebcam);
     }
   }
 
   stopTracking() {
-    this.tracking = false;
-    (this.video.srcObject as MediaStream).getTracks().forEach(track => track.stop());
-    this.video.srcObject = null;
-    this.canvasCtx.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
-   }
+    this.tracking = false; (this.video.srcObject as MediaStream).getTracks().forEach(track => track.stop());
+    this.video.srcObject = null; this.canvasCtx.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
+  }
 }
 
