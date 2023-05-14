@@ -1,0 +1,7 @@
+{
+  "name": "ml-pol",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "angular-standalone"
+}
