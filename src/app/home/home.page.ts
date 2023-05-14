@@ -1,7 +1,7 @@
 import { AfterViewInit, Component, OnInit } from '@angular/core';
 import { IonicModule } from '@ionic/angular';
 
-import { Category, Classifications, DrawingUtils, FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+import { Category, DrawingUtils, FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 
 @Component({
@@ -20,7 +20,6 @@ export class HomePage implements OnInit, AfterViewInit {
   video!: HTMLVideoElement;
   canvasElement!: HTMLCanvasElement;
   canvasCtx!: CanvasRenderingContext2D;
-  videoWidth = window.innerWidth;
   // A state to toggle functionality.
   tracking: boolean = false;
   // A challenge state for the user.
@@ -31,9 +30,9 @@ export class HomePage implements OnInit, AfterViewInit {
   async ngOnInit(): Promise<void> {
     this.faceLandmarker = await FaceLandmarker.createFromOptions(await FilesetResolver.forVisionTasks(this.wasmUrl), {
       baseOptions: { modelAssetPath: this.modelAssetPath, delegate: "GPU" },
-      outputFaceBlendshapes: true,
+      outputFaceBlendshapes: true, // We will draw the face mesh in canvas.
       runningMode: "VIDEO",
-    });
+    }); // When FaceLandmarker is ready, you'll see in the console: Graph successfully started running.
   }
 
   async ngAfterViewInit(): Promise<void> {
@@ -44,8 +43,8 @@ export class HomePage implements OnInit, AfterViewInit {
 
   toggleTracking = () => (this.tracking = !this.tracking, this.tracking ? this.startTracking() : this.stopTracking());
 
-
   startTracking() {
+    // Check if we can access user media api.
     (!(!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) || !this.faceLandmarker) && (console.warn("user media or ml model is not available"), false);
     // Everything is ready to go!
     navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => (this.video.srcObject = stream, this.video.addEventListener("loadeddata", predictWebcam)));
@@ -68,7 +67,7 @@ export class HomePage implements OnInit, AfterViewInit {
     }
   }
 
-  stopTracking() {
+  stopTracking() { // Stop and clear the video & canvas
     this.tracking = false; (this.video.srcObject as MediaStream).getTracks().forEach(track => track.stop());
     this.video.srcObject = null; this.canvasCtx.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
   }
