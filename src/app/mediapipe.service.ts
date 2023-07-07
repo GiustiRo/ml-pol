@@ -12,7 +12,7 @@ export class MediaPipeService {
     private video!: HTMLVideoElement;
     private canvasElement!: HTMLCanvasElement;
     private canvasCtx!: CanvasRenderingContext2D;
-    private layoutLoaded: boolean = false;
+    private layoutMounted: boolean = false;
 
     // Toggle to draw complete face mesh.
     public displayDraws: boolean = false;
@@ -87,60 +87,37 @@ export class MediaPipeService {
             if (results.faceLandmarks && results.faceBlendshapes && results.faceBlendshapes[0] && results.faceBlendshapes![0].categories?.find(
                 (shape: Category) => shape?.categoryName == "eyeBlinkRight")?.score > 0.4) (this.polChallenges['blink'].done = true, console.warn('Guiño Guiño'));
 
-            if (!this.layoutLoaded) {
-                console.warn('done loading...')
-                this.page.appendChild(this.generateOverlayRef());
+            if (!this.layoutMounted) {
+                console.log('🛡 - challenge ready and running...')
+                // this.page.appendChild(this.generateOverlayRef());
+                document.querySelector('#user-overlay')?.classList.add('tracking');
             }
-            this.layoutLoaded = true;
+            this.layoutMounted = true;
             // Call this function again to keep predicting when the browser is ready.
             this.tracking == true && window.requestAnimationFrame(predictWebcam);
         }
     }
 
     private stopTracking(done?: boolean) { // Stop and clear the video & canvas
-        if (done) {
-            setTimeout(() => document.querySelector(`#${this.userChallenges['SEL'].id}`)?.classList.add('challenge-done'), 300);
-        }
         this.tracking = false; (this.video.srcObject as MediaStream).getTracks().forEach(track => track.stop());
         this.video.srcObject = null; this.canvasCtx.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
         document.querySelectorAll('.user-media')?.forEach(el => el.classList.remove('tracking'));
         document.querySelectorAll('.user-media')?.forEach(el => el.remove());
-        this.layoutLoaded = false;
+        this.layoutMounted = false;
 
+        if (done) setTimeout(() => document.querySelector(`#${this.userChallenges['SEL'].id}`)?.classList.add('challenge-done'), 300);
     }
 
     private async setupVideoAndCanvas() {
-        this.page = document.body.appendChild(document.createElement('section'));
-        this.page.classList.add('challenge-page')
-        this.video = this.page.appendChild(this.generateVideoRef());
-        this.canvasElement = this.page.appendChild(this.generateCanvasRef());
+        this.page = document.querySelector('.challenge-page')!;
+        this.video = document.querySelector('#user-video') as HTMLVideoElement;
+        this.canvasElement = document.querySelector('#user-canvas') as HTMLCanvasElement;
         this.canvasCtx = this.canvasElement.getContext("2d") as CanvasRenderingContext2D;
-        document.querySelectorAll('.user-media')?.forEach(el => el.classList.add('tracking'));
+        document.querySelectorAll('.user-media:not(#user-overlay)')?.forEach(el => el.classList.add('tracking'));
     }
-
-    private generateVideoRef(): HTMLVideoElement {
-        const elRef = document.createElement("video");
-        elRef.classList.add('user-media');
-        elRef.id = "user-video";
-        elRef.setAttribute("autoplay", "");
-        elRef.setAttribute("playsinline", "");
-        return elRef;
-    }
-    private generateCanvasRef(): HTMLCanvasElement {
-        const elRef = document.createElement("canvas");
-        elRef.classList.add('user-media');
-        elRef.id = "user-canvas";
-        return elRef;
-    }
-    private generateOverlayRef(): HTMLElement {
-        const elRef = document.createElement("div");
-        elRef.classList.add('user-media', 'tracking');
-        elRef.id = "user-overlay";
-        return elRef;
-    }
-
+    
     selfieChallenge = () => {
-        console.log('strating selfie challenge...');
+        console.log('🛡 - strating selfie challenge...');
         this.toggleTracking();
     }
 }

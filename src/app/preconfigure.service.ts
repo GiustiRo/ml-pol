@@ -1,5 +1,14 @@
 import { Injectable } from '@angular/core';
 
+export type mlpolConfig = {
+    challenges: {
+        selfie: { required: boolean, callback: Function },
+        proofOfLife: { required: boolean, callback: Function },
+        identification: { required: boolean, callback: Function },
+        knowYourCustomer: { required: boolean, callback: Function }
+    },
+    completeCallback: Function
+}
 export type BrandConfig = {
     name: string,
     colors: { base: string, primary: string, contrast: string },
@@ -11,10 +20,20 @@ export type BrandConfig = {
 
 @Injectable({ providedIn: 'root' })
 export class PreconfigureService {
+    private mlpolConfig: mlpolConfig = {
+        challenges: {
+            selfie: { required: true, callback: () => { } },
+            proofOfLife: { required: true, callback: () => { } },
+            identification: { required: true, callback: () => { } },
+            knowYourCustomer: { required: true, callback: () => { } }
+        },
+        completeCallback: () => { alert('MLPOL Flow Completed!') }
+    };
+
     public brandConfig: BrandConfig = {
         name: 'Alabama Solutions',
         colors: {
-            base: '#1b1b1b',
+            base: '#f2f2f2',
             primary: '#7d0070',
             contrast: '#ffffff',
         },
@@ -24,10 +43,15 @@ export class PreconfigureService {
         logoSrc: 'assets/images/logo.png',
     }
 
+    setMLPOLConfig(config: mlpolConfig) {
+        this.mlpolConfig = config;
+    }
+    public getMLPOLConfig() { return this.mlpolConfig; }
+
     public getBrandConfig() { return this.brandConfig; }
 
-    public setBrandConfig(brandConfig: BrandConfig) {
-        this.brandConfig = brandConfig;
+    public setBrandConfig(config: BrandConfig) {
+        this.brandConfig = config;
         document.body.style.setProperty('--base-color', this.brandConfig.colors.base);
         document.body.style.setProperty('--primary-color', this.brandConfig.colors.primary);
         document.body.style.setProperty('--primary-color-alt', this.brandConfig.colors.contrast);

@@ -1,7 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { Routes } from '@angular/router';
 import { MLPOL } from './MLPOL';
-import { BrandConfig } from './preconfigure.service';
+import { BrandConfig, mlpolConfig } from './preconfigure.service';
 
 export const routes: Routes = [
   { path: '', redirectTo: '', pathMatch: 'full', }
@@ -17,6 +17,15 @@ export const routes: Routes = [
 export class AppComponent {
   MLPOL = inject(MLPOL);
 
+  mlpolConfig: mlpolConfig = {
+    challenges: {
+      selfie: { required: true, callback: () => { } },
+      proofOfLife: { required: true, callback: () => { } },
+      identification: { required: true, callback: () => { } },
+      knowYourCustomer: { required: true, callback: () => { } }
+    },
+    completeCallback: () => { alert('MLPOL Flow Completed!') }
+  };
   customBrand: BrandConfig = {
     name: 'Alabama Solutions',
     colors: {
@@ -28,10 +37,13 @@ export class AppComponent {
     themes: { rounded: true, glossy: false },
     animated: false,
     logoSrc: 'assets/images/logo.png',
-  }
+  };
 
   constructor() {
-    this.MLPOL.initMLPOL(this.customBrand);
+    // Single call to initialize the MLPOL Flow.
+    this.MLPOL.initMLPOL(
+      // this.mlpolConfig, this.customBrand
+    );
   }
 
 }
