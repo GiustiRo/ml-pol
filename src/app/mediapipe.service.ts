@@ -8,14 +8,18 @@ export class MediaPipeService {
     private faceLandmarker!: FaceLandmarker;
     private imageEmbedder!: ImageEmbedder;
     private wasmUrl: string = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm";
-    private modelAssetPath_FaceLandmarker: string = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
-    private modelAssetPath_Embedder: string = "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite";
+    // private modelAssetPath_FaceLandmarker: string = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+    // private modelAssetPath_Embedder: string = "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite";
+    private modelsPaths = {
+        faceLandmarker: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+        embedder: "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite"
+    }
     // Native elements and types we need to interact to later.
-    private page!: HTMLElement;
+    // private page!: HTMLElement;
     private video!: HTMLVideoElement;
     private canvasElement!: HTMLCanvasElement;
     private canvasCtx!: CanvasRenderingContext2D;
-    private layoutMounted: boolean = false;
+    // private layoutMounted: boolean = false;
 
     private imageEmbeddings: { front: ImageEmbedderResult | undefined, back: ImageEmbedderResult | undefined } = { front: undefined, back: undefined }
 
@@ -25,9 +29,9 @@ export class MediaPipeService {
     public tracking: boolean = false;
 
     // Dictionary of available challenges for the user to acomplish.
-    public userChallenges: { [key: string]: { id: string, label: string, challenge: boolean, done: boolean, action?: Function } } = {
-        SEL: { id: 'selfie', label: 'Selfie', challenge: true, done: false, action: () => this.__selfieChallenge() },
+    public userChallenges: { [key: string]: { id: string, label: string, challenge: boolean, done: boolean, action?: Function, results?: any } } = {
         POL: { id: 'proofOfLife', label: 'Proof Of Life', challenge: true, done: false, action: () => this.__polChallenge() },
+        SEL: { id: 'selfie', label: 'Selfie', challenge: true, done: false, action: () => this.__selfieChallenge(), results: undefined },
         DOC: { id: 'identification', label: 'Documento', challenge: true, done: false, action: () => this.__docChallenge() },
         KYC: { id: 'knowYourCustomer', label: 'KYC (Comprobante)', challenge: true, done: false, action: () => { } },
     }
@@ -44,19 +48,17 @@ export class MediaPipeService {
 
     async initMP(): Promise<FaceLandmarker> {
         return this.faceLandmarker = await FaceLandmarker.createFromOptions(await FilesetResolver.forVisionTasks(this.wasmUrl), {
-            baseOptions: { modelAssetPath: this.modelAssetPath_FaceLandmarker, delegate: "GPU" },
+            baseOptions: { modelAssetPath: this.modelsPaths.faceLandmarker, delegate: "GPU" },
             outputFaceBlendshapes: true, runningMode: "VIDEO"
         }); // When FaceLandmarker is ready, you'll see in the console: Graph successfully started running.
     }
 
     private async initEmbedder() {
         return this.imageEmbedder = await ImageEmbedder.createFromOptions(
-            await FilesetResolver.forVisionTasks(this.wasmUrl),
-            {
-                baseOptions: {
-                    modelAssetPath: this.modelAssetPath_Embedder
-                }, quantize: false, runningMode: "IMAGE"
-            });
+            await FilesetResolver.forVisionTasks(this.wasmUrl), {
+            baseOptions: { modelAssetPath: this.modelsPaths.embedder },
+            quantize: false, runningMode: "IMAGE"
+        });
     }
 
     checkMediaAccess = () => (!(!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) || !this.faceLandmarker) && (console.warn("user media or ml model is not available"), false);
@@ -67,7 +69,7 @@ export class MediaPipeService {
         this.tracking = false; this.video.removeAllListeners!("loadeddata");
         (this.video.srcObject as MediaStream).getTracks().forEach(track => track.stop());
         this.canvasCtx.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
-        this.video.srcObject = null; this.layoutMounted = false;
+        this.video.srcObject = null;
         this.toggleLoader(false);
 
         document.querySelectorAll('.user-media')?.forEach(el => el.classList.remove('tracking'));
@@ -82,7 +84,7 @@ export class MediaPipeService {
 
     private async setupVideoAndCanvas() {
         this.toggleLoader(true);
-        this.page = document.querySelector('.challenge-page')!;
+        // this.page = document.querySelector('.challenge-page')!;
         this.video = document.querySelector('#user-video') as HTMLVideoElement;
         this.canvasElement = document.querySelector('#user-canvas') as HTMLCanvasElement;
         this.canvasCtx = this.canvasElement.getContext("2d") as CanvasRenderingContext2D;
@@ -93,34 +95,6 @@ export class MediaPipeService {
         if (state && document.querySelector('.spinner')) return;
         if (state) document.body.appendChild(buildElement('div', { class: 'spinner' }, [buildElement('img', { src: 'assets/images/spinner.gif' })]));
         else document.querySelector('.spinner')?.remove();
-    }
-
-    __selfieChallenge = async () => {
-        console.log('🛡 - strating SEL challenge...');
-        if (this.checkMediaAccess()) return;
-        this.setupVideoAndCanvas(); this.tracking = true;
-        let lastVideoTime = -1; let results: any = undefined;
-        let predictWebcam = async () => {
-            this.canvasElement.width = this.video.videoWidth; this.canvasElement.height = this.video.videoHeight; // Match Video & Canvas sizes.
-            lastVideoTime !== this.video.currentTime && (lastVideoTime = this.video.currentTime, results = this.faceLandmarker?.detectForVideo(this.video, Date.now()));// Send the video frame to the model.
-
-            if (lastVideoTime > 0) {
-                document.querySelectorAll('.user-media:not(#user-overlay)')?.forEach(el => el.classList.add('tracking'));
-                document.querySelector('#user-overlay')?.classList.add('tracking'); this.layoutMounted = true;
-                if (results.faceLandmarks[0] && results.faceLandmarks[0][0] && results.faceLandmarks[0][0]?.x > 0.45 && results.faceLandmarks[0][0]?.x < 0.55 &&
-                    results.faceLandmarks[0][0]?.y > 0.5 && results.faceLandmarks[0][0]?.y < 0.7 && !this.userChallenges['SEL'].done) {
-                    document.querySelector('#user-overlay')?.classList.add('user-ok');
-                    setTimeout(() => !this.userChallenges['SEL'].done && (this.userChallenges['SEL'].done = true), 1000);
-                } else { try { document.querySelector('#user-overlay')?.classList.remove('user-ok'); } catch (error) { } }
-
-                // Call this function until challenge is completed or canceled.
-                if (this.userChallenges['SEL'].done) (this.stopTracking(true, 'SEL'), false);
-            }
-
-            this.tracking == true && window.requestAnimationFrame(predictWebcam);
-        }
-        console.log('🛡 - challenge ready and running...');
-        this.getUserMedia(predictWebcam, true);
     }
 
     __polChallenge = async () => {
@@ -135,7 +109,7 @@ export class MediaPipeService {
 
             if (lastVideoTime > 0) {
                 document.querySelectorAll('.user-media:not(#user-overlay)')?.forEach(el => el.classList.add('tracking'));
-                this.layoutMounted = true; const drawingUtils = new DrawingUtils(this.canvasCtx!);
+                const drawingUtils = new DrawingUtils(this.canvasCtx!);
 
                 // Check if the user blinked (you can customize this to expect a smile, etc). Let's assume there is only one face.
                 if (results.faceLandmarks && results.faceBlendshapes && results.faceBlendshapes[0]) {
@@ -165,6 +139,38 @@ export class MediaPipeService {
         this.getUserMedia(predictWebcam, true);
     }
 
+    __selfieChallenge = async () => {
+        console.log('🛡 - strating SEL challenge...');
+        if (this.checkMediaAccess()) return;
+        this.setupVideoAndCanvas(); this.tracking = true;
+        let lastVideoTime = -1; let results: any = undefined;
+        let predictWebcam = async () => {
+            this.canvasElement.width = this.video.videoWidth; this.canvasElement.height = this.video.videoHeight; // Match Video & Canvas sizes.
+            lastVideoTime !== this.video.currentTime && (lastVideoTime = this.video.currentTime, results = this.faceLandmarker?.detectForVideo(this.video, Date.now()));// Send the video frame to the model.
+
+            if (lastVideoTime > 0) {
+                document.querySelectorAll('.user-media:not(#user-overlay)')?.forEach(el => el.classList.add('tracking'));
+                document.querySelector('#user-overlay')?.classList.add('tracking');
+                if (results.faceLandmarks[0] && results.faceLandmarks[0][0] && results.faceLandmarks[0][0]?.x > 0.45 && results.faceLandmarks[0][0]?.x < 0.55 &&
+                    results.faceLandmarks[0][0]?.y > 0.5 && results.faceLandmarks[0][0]?.y < 0.7 && !this.userChallenges['SEL'].done) {
+                    document.querySelector('#user-overlay')?.classList.add('user-ok');
+
+                    console.log();
+                    setTimeout(() => !this.userChallenges['SEL'].done && (this.userChallenges['SEL'].done = true), 1000);
+                } else { try { document.querySelector('#user-overlay')?.classList.remove('user-ok'); } catch (error) { } }
+
+                // Call this function until challenge is completed or canceled.
+                if (this.userChallenges['SEL'].done) {
+                    this.captureImage().then((img) => { this.userChallenges['SEL'].results = img; this.stopTracking(true, 'SEL'); });
+                    return;
+                };
+            }
+            this.tracking == true && window.requestAnimationFrame(predictWebcam);
+        }
+        console.log('🛡 - challenge ready and running...');
+        this.getUserMedia(predictWebcam, true);
+    }
+
     __docChallenge = async () => {
         this.toggleLoader(true);
         await this.initEmbedder();
@@ -189,34 +195,40 @@ export class MediaPipeService {
 
                     document.querySelectorAll('.user-media:not(#user-overlay)')?.forEach(el => el.classList.add('tracking'));
                     if (!document.querySelector('.document-layout')) document.querySelector('.challenge-page')!.appendChild(buildElement('div', { class: 'user-media document-layout tracking' }, [docLayout]));
-                    // document.querySelector('#user-overlay')?.classList.add('tracking', 'document-overlay-frame'); 
-                    this.layoutMounted = true;
 
                     if (this.imageEmbeddings.front && results) {
                         const similarity = ImageEmbedder.cosineSimilarity(
                             this.imageEmbeddings.front!.embeddings[0],
                             results.embeddings[0]
                         );
-                        // console.log(similarity);
-                        // Tiene que estar bien iluminado para llegar a este nivel...
+                        // Tiene que estar bien iluminado para llegar a este nivel de confidence...
                         if (similarity > 0.42) {
                             console.log('Match');
                             setTimeout(() => !this.userChallenges['DOC'].done && (this.userChallenges['DOC'].done = true), 1000)
                         }
                     }
                 }
-                // if (this.userChallenges['DOC'].done) setTimeout(() => this.userChallenges['DOC'].done = true, 1000);
-
                 // Call this function again to keep predicting when the browser is ready.
                 if (this.userChallenges['DOC'].done) (this.stopTracking(true, 'DOC'), false);
                 this.tracking == true && window.requestAnimationFrame(predictWebcam);
-
             }
             console.log('🛡 - challenge ready and running...');
-            this.getUserMedia(predictWebcam, { facingMode: 'environment' });
             const docLayout = this.getDocumentLayoutByLocale(this.getLocaleCode());
+            this.getUserMedia(predictWebcam, { facingMode: 'environment' });
         }, 500)
 
+    }
+
+    captureImage() {
+        return new Promise((resolve, _) => {
+            console.warn('Capturing video frame...');
+            this.canvasCtx.drawImage(this.video, 0, 0, this.video.videoWidth, this.video.videoHeight);
+            this.canvasElement.toBlob((blob) => {
+                const reader = new FileReader();
+                reader.onloadend = () => { resolve(reader.result); console.log('🛡 - image captured!', reader.result); };
+                reader.readAsDataURL(blob!);
+            });
+        });
     }
 
     getLocaleCode = () => 'es-UY';
