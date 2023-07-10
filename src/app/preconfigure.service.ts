@@ -15,12 +15,12 @@ export type BrandConfig = {
     sizes?: 'small' | 'medium' | 'large',
     themes?: { rounded?: boolean, glossy?: boolean },
     animated?: boolean,
-    logoSrc?: string
+    logoSrc?: string | undefined
 }
 
 @Injectable({ providedIn: 'root' })
 export class PreconfigureService {
-    private mlpolConfig: mlpolConfig = {
+    public mlpolConfig: mlpolConfig = {
         challenges: {
             selfie: { required: true, callback: () => { } },
             proofOfLife: { required: true, callback: () => { } },
@@ -31,24 +31,23 @@ export class PreconfigureService {
     };
 
     public brandConfig: BrandConfig = {
-        name: 'Alabama Solutions',
+        name: 'Onboarding Tech provided by Alabama Solutions ®',
         colors: {
-            base: '#f2f2f2',
+            base: '#A16AE8',
             primary: '#7d0070',
             contrast: '#ffffff',
         },
         sizes: 'medium',
         themes: { rounded: true, glossy: false },
         animated: false,
-        logoSrc: 'assets/images/logo.png',
+        logoSrc: 'assets/images/as-logo.png',
     }
 
     setMLPOLConfig(config: mlpolConfig) {
         this.mlpolConfig = config;
     }
-    public getMLPOLConfig() { return this.mlpolConfig; }
 
-    public getBrandConfig() { return this.brandConfig; }
+    public getMLPOLConfig() { return this.mlpolConfig; }
 
     public setBrandConfig(config: BrandConfig) {
         this.brandConfig = config;
@@ -59,14 +58,14 @@ export class PreconfigureService {
 
         // Themes setup.
         if (this.brandConfig.themes?.rounded) {
-            document.body.style.setProperty('--rounded', 'calc(var(--size-1)*.4)');
-
+            document.body.style.setProperty('--rounded', 'calc(var(--size-1)*2)');
         }
         if (this.brandConfig.themes?.glossy) {
             document.body.style.setProperty('--shadows', `-15px 0 25px -5px rgba(${this.hexToRgb(this.brandConfig.colors.primary)} / 1), 15px 0 25px -5px rgba(${this.hexToRgb(this.brandConfig.colors.contrast)} / 0.2)`);
         }
-
     }
+    public getBrandConfig() { return this.brandConfig; }
+
 
     // Generate a HEX to RGB color convert function.
     private hexToRgb(hex: string) {

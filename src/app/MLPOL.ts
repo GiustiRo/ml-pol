@@ -2,42 +2,56 @@ import { Injectable, inject } from "@angular/core";
 import { MediaPipeService } from "./mediapipe.service";
 import { BrandConfig, PreconfigureService, mlpolConfig } from "./preconfigure.service";
 
+export function buildElement(tag: string, attributes: { [key: string]: string } = {}, children: HTMLElement[] | Text[] = []): HTMLElement {
+    const element = document.createElement(tag);
+    for (const key in attributes) element.setAttribute(key, attributes[key]);
+    for (const child of children) element.appendChild(child);
+    return element;
+}
+
 @Injectable({ providedIn: 'root' })
 export class MLPOL {
     private mp = inject(MediaPipeService);
     private configs = inject(PreconfigureService);
 
     public initMLPOL(mlpolConfig?: mlpolConfig, brandConfig?: BrandConfig) {
-        this.createInitialLayout();
         if (mlpolConfig) this.configs.setMLPOLConfig(mlpolConfig);
         if (brandConfig) this.configs.setBrandConfig(brandConfig);
+        this.mp.initMP().then(() => {
+            this.createInitialLayout();
+        });
     }
+    
 
     private createInitialLayout() {
         // Main wraper.
-        const mainLayout = this.buildElement('main', { class: 'page-wrap df fdc jc-sb ai-center mx-auto' });
+        const mainLayout = buildElement('main', { class: 'page-wrap df fdc jc-sb ai-center mx-auto' });
         this.apendLayout(document.body, mainLayout);
-        
+
         // Video, Canvas and Overlays
-        const userVideo = this.buildElement('video', { class: 'user-media', id: 'user-video', autoplay: '', playsinline: '' });
-        const userCanvas = this.buildElement('canvas', { class: 'user-media', id: 'user-canvas'});
-        const userOverlay = this.buildElement('div', { class: 'user-media', id: 'user-overlay' });
-        const challengePage = this.buildElement('section', { class: 'challenge-page' });
+        const userVideo = buildElement('video', { class: 'user-media', id: 'user-video', autoplay: '', playsinline: '' });
+        const userCanvas = buildElement('canvas', { class: 'user-media', id: 'user-canvas' });
+        const userOverlay = buildElement('div', { class: 'user-media', id: 'user-overlay' });
+        const challengePage = buildElement('section', { class: 'challenge-page' });
         this.apendLayout(challengePage, userVideo);
         this.apendLayout(challengePage, userCanvas);
         this.apendLayout(challengePage, userOverlay);
         this.apendLayout(document.body, challengePage);
 
+        if (this.configs.brandConfig.logoSrc) {
+            const brandLogo = buildElement('img', { class: 'brand-logo', src: this.configs.brandConfig.logoSrc! });
+            this.apendLayout(mainLayout, brandLogo);
+        }
 
         // Challenges.
-        const challengesLayout = this.buildElement('div', { class: 'challenges df fdc jc-center ai-stretch' });
+        const challengesLayout = buildElement('div', { class: 'challenges df fdc jc-center ai-stretch' });
         this.apendLayout(mainLayout, challengesLayout);
         Object.entries(this.mp.userChallenges).forEach(([key, value]) => {
             const svg = this.svgs[value.id];
-            if (this.mp.userChallenges[key].challenge) {
-                const challengeCard = this.buildElement('div', { class: 'challenge df dfr ai-center jc-sb', id: value.id }, [
-                    this.buildElement('h3', { class: 'm-0' }, [document.createTextNode(this.mp.userChallenges[key].label)]),
-                    // this.buildElement('span', {}, [document.createTextNode('')]),
+            if (this.mp.userChallenges[key].challenge && (this.configs.mlpolConfig.challenges as any)[value.id].required) {
+                const challengeCard = buildElement('div', { class: 'challenge df dfr ai-center jc-sb', id: value.id }, [
+                    buildElement('h3', { class: 'm-0' }, [document.createTextNode(this.mp.userChallenges[key].label)]),
+                    // buildElement('span', {}, [document.createTextNode('')]),
                 ]);
                 svg && challengeCard.insertAdjacentHTML('beforeend', svg);
                 challengeCard.addEventListener('click', () => this.mp.userChallenges[key].action!());
@@ -45,20 +59,19 @@ export class MLPOL {
             }
         });
 
+
         // Done Button (activated once all challenges are done).
-        const button = this.buildElement('button', { class: '', disabled: '' }, [document.createTextNode('COMPLETE')]);
-        button.addEventListener('click', () => this.mp.toggleTracking());
+        const button = buildElement('button', { class: '', disabled: '' }, [document.createTextNode('COMPLETE')]);
+        button.addEventListener('click', () => alert('DONE!'));
         this.apendLayout(mainLayout, button);
+
+        const brandName = buildElement('small', { class: 'brand-name' }, [document.createTextNode(this.configs.brandConfig.name)]);
+        this.apendLayout(mainLayout, brandName);
     }
 
     private apendLayout(parent: HTMLElement, child: HTMLElement) { parent.appendChild(child) }
 
-    private buildElement(tag: string, attributes: { [key: string]: string } = {}, children: HTMLElement[] | Text[] = []): HTMLElement {
-        const element = document.createElement(tag);
-        for (const key in attributes) element.setAttribute(key, attributes[key]);
-        for (const child of children) element.appendChild(child);
-        return element;
-    }
+
 
 
     svgs: any = {

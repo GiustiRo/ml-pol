@@ -27,22 +27,22 @@ export class AppComponent {
     completeCallback: () => { alert('MLPOL Flow Completed!') }
   };
   customBrand: BrandConfig = {
-    name: 'Alabama Solutions',
+    name: 'MLerify - User Verification & Machine Learning.',
     colors: {
-      base: '#f2f2f2',
-      primary: '#7d0070',
-      contrast: '#ffffff',
+      base: '#ffffff',
+      primary: '#182b62',
+      contrast: '#f8f8f8',
     },
     sizes: 'medium',
     themes: { rounded: true, glossy: false },
     animated: false,
-    logoSrc: 'assets/images/logo.png',
+    logoSrc: 'assets/icon/mlerify_logo.png',
   };
 
   constructor() {
     // Single call to initialize the MLPOL Flow.
     this.MLPOL.initMLPOL(
-      // this.mlpolConfig, this.customBrand
+      this.mlpolConfig, this.customBrand
     );
   }
 
