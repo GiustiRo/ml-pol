@@ -72,11 +72,13 @@ body {
 
 }
 
-#user-video, #user-canvas{
+#user-video,
+#user-canvas {
     transform: scaleX(-1);
 }
-.unflip{
-    transform: scaleX(1) !important;  
+
+.unflip {
+    transform: scaleX(1) !important;
 }
 
 
@@ -320,20 +322,44 @@ button {
     }
 }
 
-#composite-canvas, #composite-picture{
+// Below DEV utilites related styles.
+
+#dev-data{
     position: fixed;
-    top: 0;
-    // left: 0;
-    z-index: 9999999999999999999999;
-    width: 200px;
-    height: 200px;
+    bottom: 0;
+    display: flex;
+    width: 100vw;
+    justify-content: center;
+    font-size: 1rem;
+    color: white;
+    z-index: 99999;
+    background-color: rgb(58, 58, 58);
+}
+
+#composite-canvas,
+#composite-picture {
+    position: fixed;
+    top: -800px;
+    z-index: -9999999999999999999999;
+    width: 800px;
+    height: 800px;
     background-color: transparent;
     transform: scaleX(-1);
     object-fit: cover;
+    visibility: hidden;
+
+    &.dev {
+        position: relative !important;
+        top: 0vh !important;
+        z-index: 9999999999999999999999 !important;
+        visibility: visible !important;
+    }
 }
-#composite-canvas{
+
+#composite-canvas {
     left: 0;
 }
-#composite-picture{
+
+#composite-picture {
     right: 0;
 }

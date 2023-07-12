@@ -1,9 +1,11 @@
 import { Injectable } from '@angular/core';
-import { Category, DrawingUtils, FaceLandmarker, FaceLandmarkerResult, FilesetResolver, ImageEmbedder, ImageEmbedderResult } from '@mediapipe/tasks-vision';
+import { Category, DrawingUtils, FaceLandmarker, FilesetResolver, ImageEmbedder, ImageEmbedderResult } from '@mediapipe/tasks-vision';
 import { buildElement } from './MLPOL';
 
 @Injectable({ providedIn: 'root' })
 export class MediaPipeService {
+    private devMode = true; // Toggle to show/hide dev data.
+
     // ML Model and properties (WASM & Model provided by Google, you can place your own).
     private faceLandmarker!: FaceLandmarker;
     private imageEmbedder!: ImageEmbedder;
@@ -53,9 +55,7 @@ export class MediaPipeService {
         }
     }
 
-    constructor() {
-        // this.initMP()
-    }
+    constructor() { }
 
     async initMP(): Promise<FaceLandmarker> {
         return this.faceLandmarker = await FaceLandmarker.createFromOptions(await FilesetResolver.forVisionTasks(this.wasmUrl), {
@@ -94,6 +94,7 @@ export class MediaPipeService {
             this.imageEmbedder.close();
             this.checkAndCompareUserPictures(type);
         }
+        setTimeout(() => this.toggleDevData(null, null, true), 1000)
     }
 
     private async setupVideoAndCanvas() {
@@ -109,17 +110,18 @@ export class MediaPipeService {
         else document.querySelector('.spinner')?.remove();
     }
 
+    retryChallenge(type: 'SEL' | 'DOC') {
+        if (type == 'SEL') this.__selfieChallenge();
+        if (type == 'DOC') this.__docChallenge();
+    }
+
     __polChallenge = async () => {
-        console.log('🛡 - strating POL challenge...');
+        this.userChallenges['POL'].done = false;
+        console.log('👨‍💻 - strating POL challenge...');
         if (this.checkMediaAccess()) return;
         this.faceLandmarker.applyOptions({ runningMode: "VIDEO" });
         this.setupVideoAndCanvas(); this.tracking = true;
-
-        document.body.appendChild(buildElement('canvas', { id: 'composite-canvas' }));
-        document.body.appendChild(buildElement('canvas', { id: 'composite-picture' }));
-
         let lastVideoTime = -1; let results: any = undefined;
-        let lastVideoSecond = -1;
         let predictWebcam = async () => {
             this.canvasElement.width = this.video.videoWidth; this.canvasElement.height = this.video.videoHeight; // Match Video & Canvas sizes.
             lastVideoTime !== this.video.currentTime && (lastVideoTime = this.video.currentTime, results = this.faceLandmarker?.detectForVideo(this.video, Date.now()));// Send the video frame to the model.
@@ -147,47 +149,25 @@ export class MediaPipeService {
                 // drawingUtils.drawConnectors(results.faceLandmarks[0], FaceLandmarker.FACE_LANDMARKS_TESSELATION, { color: "#FF0000", lineWidth: 10 })
                 // drawingUtils.drawConnectors(results.faceLandmarks[0], FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, { color: "#FF0000", lineWidth: 20 });
                 // drawingUtils.drawLandmarks(results.faceLandmarks[0], { color: "#FF0000", lineWidth: 5, radius: 8 });
-
-
-                // ########## PRESERVE THE FACE MASKED BY LANDMARKS ##########
-                if (Math.round(this.video.currentTime) != lastVideoSecond && false) {
-                    lastVideoSecond = Math.round(this.video.currentTime);
-                    console.log(Math.round(this.video.currentTime));
-                    let ctx = (document.querySelector('#composite-canvas') as HTMLCanvasElement).getContext('2d');
-                    let mlr = 1;
-                    this.canvasElement.toBlob((blob) => {
-                        ctx!.clearRect(0, 0, 200, 200);
-                        ctx!.globalCompositeOperation = 'source-over';
-                        ctx!.filter = 'grayscale(100%)'
-                        let img = new Image();
-                        img.src = URL.createObjectURL(blob!);
-                        img.onload = () => {
-                            ctx!.drawImage(this.video, 50, -50, 200 * mlr, 200 * mlr);
-                            ctx!.globalCompositeOperation = 'destination-in';
-                            ctx!.drawImage(img, 55, -55, 190 * mlr, 190 * mlr);
-                        }
-                    });
-                }
-
                 if (this.polChallenges['blink'].done && this.polChallenges['smile'].done) setTimeout(() => this.userChallenges['POL'].done = true, 1000);
             }
-            // Call this function again to keep predicting when the browser is ready.
             if (this.userChallenges['POL'].done) {
-                this.captureImage().then(() => {
+                // this.captureImage().then(() => {
                     this.stopTracking(true, 'POL');
-                })
+                // })
                 return;
             };
             this.tracking == true && window.requestAnimationFrame(predictWebcam);
-
         }
-        console.log('🛡 - challenge ready and running...');
         this.getUserMedia(predictWebcam, true);
+        console.log('👨‍💻 - challenge ready and running...');
     }
 
     __selfieChallenge = async () => {
-        console.log('🛡 - strating SEL challenge...');
+        this.userChallenges['SEL'].done = false;
+        console.log('👨‍💻 - strating SEL challenge...');
         if (this.checkMediaAccess()) return;
+
         this.setupVideoAndCanvas(); this.tracking = true;
         this.faceLandmarker.applyOptions({ runningMode: "VIDEO" });
 
@@ -202,12 +182,9 @@ export class MediaPipeService {
                 if (results.faceLandmarks[0] && results.faceLandmarks[0][0] && results.faceLandmarks[0][0]?.x > 0.45 && results.faceLandmarks[0][0]?.x < 0.55 &&
                     results.faceLandmarks[0][0]?.y > 0.5 && results.faceLandmarks[0][0]?.y < 0.7 && !this.userChallenges['SEL'].done) {
                     document.querySelector('#user-overlay')?.classList.add('user-ok');
-
-                    console.log();
                     setTimeout(() => !this.userChallenges['SEL'].done && (this.userChallenges['SEL'].done = true), 1000);
                 } else { try { document.querySelector('#user-overlay')?.classList.remove('user-ok'); } catch (error) { } }
 
-                // Call this function until challenge is completed or canceled.
                 if (this.userChallenges['SEL'].done) {
                     this.captureImage().then((img) => { this.userPictures.selfie.raw = img as Blob; this.stopTracking(true, 'SEL'); });
                     return;
@@ -215,11 +192,13 @@ export class MediaPipeService {
             }
             this.tracking == true && window.requestAnimationFrame(predictWebcam);
         }
-        console.log('🛡 - challenge ready and running...');
         this.getUserMedia(predictWebcam, true);
+        console.log('👨‍💻 - challenge ready and running...');
     }
 
     __docChallenge = async () => {
+        this.userChallenges['DOC'].done = false;
+
         this.toggleLoader(true);
         await this.initEmbedder();
         this.getLocaleCode();
@@ -227,7 +206,6 @@ export class MediaPipeService {
         console.log(userDoc);
         const imgRef = document.body.appendChild(userDoc);
         setTimeout(() => {
-
             this.imageEmbeddings.front = this.imageEmbedder.embed(imgRef as HTMLImageElement);
 
             if (this.checkMediaAccess()) return;
@@ -252,31 +230,29 @@ export class MediaPipeService {
                         );
                         // Tiene que estar bien iluminado para llegar a este nivel de confidence...
                         console.log(similarity);
-                        if (similarity > 0.22) { // ^0.42
+                        if (this.devMode) this.toggleDevData('DOC', { similarity: similarity?.toString()?.substring(0, 5) });
+                        if ((!this.isMobile() && similarity > 0.15) || (this.isMobile() && similarity > 0.4)) { // ^0.4
                             console.log('Match');
                             setTimeout(() => !this.userChallenges['DOC'].done && (this.userChallenges['DOC'].done = true), 1000)
                         }
                     }
                 }
-                // Call this function again to keep predicting when the browser is ready.
                 if (this.userChallenges['DOC'].done) {
                     this.captureImage('DOC').then((img) => { this.userPictures.doc.raw = img as Blob; this.stopTracking(true, 'DOC'); });
                     return;
                 };
                 this.tracking == true && window.requestAnimationFrame(predictWebcam);
             }
-            console.log('🛡 - challenge ready and running...');
             const docLayout = this.getDocumentLayoutByLocale(this.getLocaleCode());
-            this.getUserMedia(predictWebcam, { facingMode: 'environment' });
-        }, 500)
-
+            this.getUserMedia(predictWebcam, { facingMode: 'environment', aspectRatio: { ideal: 1.7777777778 } });
+            console.log('👨‍💻 - challenge ready and running...');
+        }, 500);
     }
 
 
 
     captureImage(type?: 'SEL' | 'DOC') {
         return new Promise((resolve, _) => {
-
             console.warn('Capturing video frame...');
             this.canvasCtx.drawImage(this.video, 0, 0, this.video.videoWidth, this.video.videoHeight);
             if (type == 'DOC') {
@@ -285,21 +261,22 @@ export class MediaPipeService {
             this.canvasElement.toBlob((blob) => {
                 resolve(blob);
                 // const reader = new FileReader();
-                // reader.onloadend = () => { resolve(reader.result); console.log('🛡 - image captured!', reader.result); };
+                // reader.onloadend = () => { resolve(reader.result); console.log('👨‍💻 - image captured!', reader.result); };
                 // reader.readAsDataURL(blob!);
             });
         });
     }
 
     async checkAndCompareUserPictures(type: 'SEL' | 'DOC') {
+        // 1) Generate FaceLandmarks from image.
+        // 2) Compose the canvas with the image and the landmarks to extract the face/mask.
+        // 3) Compare the tow composed masks.
         if (this.userChallenges['SEL'].challenge && this.userChallenges['DOC'].challenge) {
-            // 1) Generate FaceLandmarks from image.
-
-            // 2) Compose the canvas with the image and the landmarks to extract the face/mask.
+            this.toggleLoader(true);
             if (type == 'SEL') await this.composeMaskedCanvas(this.userPictures.selfie.raw!, type);
             if (type == 'DOC') await this.composeMaskedCanvas(this.userPictures.doc.raw!, type);
-            // 3) Compare the tow composed masks.
-            console.warn('MASK COMPOSED: ', type)
+            console.warn('MASK COMPOSED: ', type);
+            this.toggleLoader(false);
 
             if (this.userPictures.selfie.masked != undefined && this.userPictures.doc.masked != undefined) {
                 console.log('both masked images are ready to be compared');
@@ -311,59 +288,59 @@ export class MediaPipeService {
                     docEmbed!.embeddings[0]
                 );
                 console.log('masks compared w similarity: ', similarity);
-                if (similarity > 0.42) console.log('Match');
-
-            } else {
-                console.log('one or both masked images are not ready to be compared');
-                console.log(this.userPictures);
-            }
-
-
-
+                if (this.devMode) this.toggleDevData('SELvsDOC', { similarity: similarity?.toString()?.substring(0, 5) });
+                if (similarity > 0.9) {
+                    console.log('Match');
+                }
+            } else console.log('one or both masked images are not ready to be compared', this.userPictures.selfie.masked, this.userPictures.doc.masked);
         }
     }
 
-    composeMaskedCanvas(imageParam: Blob, type?: 'SEL' | 'DOC') {
+    composeMaskedCanvas(imageParam: Blob, type: 'SEL' | 'DOC') {
         return new Promise((resolve, _) => {
-            console.log('generating canvas mask')
+            console.log('generating canvas mask');
             this.faceLandmarker.applyOptions({ runningMode: "IMAGE" });
             // 1) Check and generate the canvas to draw.
-            if (!document.querySelector('#composite-canvas')) document.body.appendChild(buildElement('canvas', { id: 'composite-canvas' }));
-            if (!document.querySelector('#composite-picture')) document.body.appendChild(buildElement('canvas', { id: 'composite-picture' }));
-            
+            if (!document.querySelector('#composite-canvas')) document.body.appendChild(buildElement('canvas', { id: 'composite-canvas', class: this.devMode ? 'dev' : '' }));
+            if (!document.querySelector('#composite-picture')) document.body.appendChild(buildElement('canvas', { id: 'composite-picture', class: this.devMode ? 'dev' : '' }));
+
             let canvas = document.querySelector('#composite-canvas') as HTMLCanvasElement;
-            if(type == 'DOC') {
-                canvas = document.querySelector('#composite-picture') as HTMLCanvasElement;
-            }
+            if (type == 'DOC') canvas = document.querySelector('#composite-picture') as HTMLCanvasElement;
             let ctx = canvas?.getContext('2d');
             const drawingUtils = new DrawingUtils(ctx!);
+            const mlr = 0.2
+            const canvasSize = 800;
 
             let picture = new Image();
             picture.src = URL.createObjectURL(imageParam!);
-
-            picture.onload = () => {
-
+            picture.onload = async () => {
                 const landmarks = this.faceLandmarker.detect(picture);
-                console.log('Generating Landmarks from saved picture...');
-                console.log(landmarks);
-                const mlr = 0.5
-                const canvasSize = 200;
+                await new Promise((resolve, _) => setTimeout(() => resolve(null), 1000));
+                if (!landmarks.faceLandmarks[0]) {
+                    console.log('No landmarks found, user needs to retry...');
+                    this.retryChallenge(type);
+                    return;
+                };
+                console.log('Generating Landmarks from saved picture...', landmarks);
+                ctx!.scale(0.8, 0.8);
+                // drawingUtils.drawConnectors(landmarks.faceLandmarks[0], FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, { color: "#FF0000", lineWidth: 20 * mlr });
                 drawingUtils.drawConnectors(landmarks.faceLandmarks[0], FaceLandmarker.FACE_LANDMARKS_TESSELATION, { color: "#FF0000", lineWidth: 10 * mlr })
-                drawingUtils.drawConnectors(landmarks.faceLandmarks[0], FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, { color: "#FF0000", lineWidth: 20 * mlr });
                 drawingUtils.drawLandmarks(landmarks.faceLandmarks[0], { color: "#FF0000", lineWidth: 5 * mlr, radius: 8 });
 
                 canvas.toBlob((landmarkBlob) => {
                     ctx!.clearRect(0, 0, canvasSize, canvasSize);
                     ctx!.globalCompositeOperation = 'source-over';
-                    if(type == 'SEL') ctx!.filter = 'grayscale(100%) contrast(80%)';
-                    if(type == 'DOC') ctx!.filter = 'grayscale(100%)';
-                    let img = new Image();
-                    img.src = URL.createObjectURL(landmarkBlob!);
-                    img.onload = () => {
-                        ctx!.drawImage(picture, 50, -20, canvasSize, canvasSize);
+                    if (type == 'SEL') ctx!.filter = 'grayscale(100%) contrast(80%)';
+                    if (type == 'DOC') ctx!.filter = 'grayscale(100%)';
+                    let landmarkImage = new Image();
+                    landmarkImage.src = URL.createObjectURL(landmarkBlob!);
+
+
+                    landmarkImage.onload = () => {
+                        ctx!.scale(1, 1);
+                        ctx!.drawImage(picture, (canvasSize * 0.10), (canvasSize * -0.05), canvasSize / 4, canvasSize / 4);
                         ctx!.globalCompositeOperation = 'destination-in';
-                        ctx!.drawImage(img, 50, -20, canvasSize, canvasSize);
-                        // ctx!.drawImage(img, 60, -18, 150, 150); // Smaller mask to fit only the face.
+                        ctx!.drawImage(landmarkImage, (canvasSize * 0.10) + (0.2 * 100), (canvasSize * -0.05) + (0.2 * 100), canvasSize / 4, canvasSize / 4);
                         canvas.toBlob((maskedBlob) => {
                             let masked = new Image();
                             masked.src = URL.createObjectURL(maskedBlob!);
@@ -389,8 +366,8 @@ export class MediaPipeService {
 
     getDocumentByLocale(locale: string, isBack?: boolean) {
         switch (locale) {
-            case 'es-UY': return `assets/locale/docs/uy/${!isBack ? 'doc_front' : 'doc_back'}.jpg`;
-            default: return `assets/locale/docs/uy/${!isBack ? 'doc_front' : 'doc_back'}.jpg`;
+            case 'es-UY': return `assets/locale/docs/uy/${!isBack ? 'doc_front' : 'doc_back'}.png`;
+            default: return `assets/locale/docs/uy/${!isBack ? 'doc_front' : 'doc_back'}.png`;
         }
     }
     getDocumentLayoutByLocale(locale: string, isBack?: boolean) {
@@ -399,4 +376,19 @@ export class MediaPipeService {
             default: return buildElement('img', { src: `assets/locale/docs/uy/${!isBack ? 'layout_front' : 'layout_back'}.png`, class: 'user-document-layout' });
         }
     }
+
+
+    toggleDevData(type: 'SEL' | 'DOC' | 'POL' | 'SELvsDOC' | null, data: any, destroy?: boolean) {
+        if (destroy) return document.querySelector('#dev-data')?.remove();
+        if (!document.querySelector('#dev-data')) { document.body.appendChild(buildElement('div', { id: 'dev-data' })); return };
+        if (type == 'DOC') {
+            document.querySelector('#dev-data')!.innerHTML = `${type} - ${JSON.stringify(data)}`;
+        }
+        if (type == 'SELvsDOC') {
+            document.querySelector('#dev-data')!.innerHTML = `${type} - ${JSON.stringify(data)}`;
+            setTimeout(() => this.toggleDevData(null, null, true), 5000)
+        }
+    }
+
+    isMobile = () => /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
