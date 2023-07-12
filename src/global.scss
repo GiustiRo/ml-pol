@@ -197,16 +197,15 @@ body {
     opacity: .5 !important;
     pointer-events: none !important;
     border-left-color: var(--primary-color) !important;
-    color: var(--primary-color) !important;
 
-    h3::after {
+    &::after {
         filter: drop-shadow(0px 0px 10px #00000090);
         content: "✅";
         margin-left: calc(var(--size-1) * 0.4);
         position: absolute;
-        right: 10px;
-        translate: 0 15px;
+        translate: 0 20px;
         opacity: 1;
+        right: 10px;
     }
 
     .asset-wrap {
@@ -215,6 +214,26 @@ body {
 
     svg path {
         fill: var(--primary-color) !important;
+    }
+}
+
+.challenge-failed{
+    border-left-color: red !important;
+    color: red !important;
+    &::after {
+        filter: drop-shadow(0px 0px 10px #00000090);
+        content: "❌";
+        margin-left: calc(var(--size-1) * 0.4);
+        position: absolute;
+        translate: 0 20px;
+        opacity: 1;
+        right: 10px;
+    }
+    .asset-wrap {
+        opacity: 1;
+    }
+    svg path {
+        fill: red !important;
     }
 }
 
@@ -340,6 +359,7 @@ button {
 #composite-picture {
     position: fixed;
     top: -800px;
+    left: -800px;
     z-index: -9999999999999999999999;
     width: 800px;
     height: 800px;
@@ -357,9 +377,12 @@ button {
 }
 
 #composite-canvas {
-    left: 0;
+    left: -800px;
+    &.dev { left: 0vh !important}
 }
 
 #composite-picture {
-    right: 0;
+    left: -800px;
+    &.dev { left: 0vh !important}
+
 }

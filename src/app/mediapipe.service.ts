@@ -2,6 +2,8 @@ import { Injectable } from '@angular/core';
 import { Category, DrawingUtils, FaceLandmarker, FilesetResolver, ImageEmbedder, ImageEmbedderResult } from '@mediapipe/tasks-vision';
 import { buildElement } from './MLPOL';
 
+const c = (msg: any) => console.log('👨‍💻 - ' + msg);
+
 @Injectable({ providedIn: 'root' })
 export class MediaPipeService {
     private devMode = true; // Toggle to show/hide dev data.
@@ -25,23 +27,22 @@ export class MediaPipeService {
 
     private imageEmbeddings: { front: ImageEmbedderResult | undefined, back: ImageEmbedderResult | undefined } = { front: undefined, back: undefined }
 
-    // Toggle to draw complete face mesh.
-    public displayDraws: boolean = false;
-    // A state to toggle functionality.
+    // A state to toggle while MP is running.
     public tracking: boolean = false;
 
     // Dictionary of available challenges for the user to acomplish.
     public userChallenges: { [key: string]: { id: string, label: string, challenge: boolean, done: boolean, action?: Function } } = {
-        POL: { id: 'proofOfLife', label: 'Proof Of Life', challenge: true, done: false, action: () => this.__polChallenge() },
-        SEL: { id: 'selfie', label: 'Selfie', challenge: true, done: false, action: () => this.__selfieChallenge() },
-        DOC: { id: 'identification', label: 'Documento', challenge: true, done: false, action: () => this.__docChallenge() },
+        POL: { id: 'proofOfLife', label: 'Proof Of Life', challenge: true, done: false, action: () => this.preloadState('POL') },
+        SEL: { id: 'selfie', label: 'Selfie', challenge: true, done: false, action: () => this.preloadState('SEL') },
+        DOC: { id: 'identification', label: 'Documento', challenge: true, done: false, action: () => this.preloadState('DOC') },
         KYC: { id: 'knowYourCustomer', label: 'KYC (Comprobante)', challenge: true, done: false, action: () => { } },
     }
     public polChallenges: { [key: string]: { id: string, label: string, challenge: boolean, done: boolean } } = {
         blink: { id: 'blink', label: 'Blink', challenge: true, done: false },
         smile: { id: 'smile', label: 'Smile', challenge: true, done: false },
-        eyebrows: { id: 'eyebrows', label: 'Raise your eyebrows', challenge: false, done: false },
-        mouth: { id: 'mouth', label: 'Open your mouth', challenge: false, done: false },
+        /*TODO*/eyebrows: { id: 'eyebrows', label: 'Raise your eyebrows', challenge: false, done: false },
+        /*TODO*/mouth: { id: 'mouth', label: 'Open your mouth', challenge: false, done: false },
+        /*TODO*/head: { id: 'headMovement', label: 'Move your head', challenge: false, done: false },
     }
 
     private userPictures: { doc: { raw: Blob | undefined, masked: HTMLImageElement | undefined }, selfie: { raw: Blob | undefined, masked: HTMLImageElement | undefined } } = {
@@ -72,9 +73,18 @@ export class MediaPipeService {
         });
     }
 
-    checkMediaAccess = () => (!(!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) || !this.faceLandmarker) && (console.warn("user media or ml model is not available"), false);
+    checkMediaAccess = () => (!(!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) || !this.faceLandmarker) && (console.warn("user media or ml model is not available"), this.toggleLoader(false), false);
 
-    getUserMedia = (predictWebcam: any, videoParams: any) => navigator.mediaDevices.getUserMedia({ video: { ...videoParams } }).then((stream) => (this.video.srcObject = stream, this.video.addEventListener("loadeddata", predictWebcam)));
+    getUserMedia = (predictWebcam: any, videoParams: any) => navigator.mediaDevices.getUserMedia({ video: { ...videoParams, width: {ideal: 1920}, height: {ideal: 1080} } }).then((stream) => (this.video.srcObject = stream, this.video.addEventListener("loadeddata", predictWebcam)));
+
+    preloadState = (type: 'POL' | 'SEL' | 'DOC' | 'KYC') => {
+        this.toggleLoader(true);
+        setTimeout(() => {
+            if (type == 'POL') this.__polChallenge();
+            if (type == 'SEL') this.__selfieChallenge();
+            if (type == 'DOC') this.__docChallenge();
+        }, 300);
+    }
 
     private stopTracking(done: boolean = false, type: 'SEL' | 'POL' | 'DOC' | 'KYC') { // Stop and clear the video & canvas
         this.tracking = false; this.video.removeAllListeners!("loadeddata");
@@ -84,21 +94,21 @@ export class MediaPipeService {
         this.toggleLoader(false);
 
         document.querySelectorAll('.user-media')?.forEach(el => el.classList.remove('tracking'));
-        if (done) this.userChallenges[type].done && setTimeout(() => document.querySelector(`#${this.userChallenges[type].id}`)?.classList.add('challenge-done'), 300);
+        if (done) this.markAsDone(type);
         if (type == 'SEL') {
             this.checkAndCompareUserPictures(type);
         }
         if (type == 'DOC') {
             document.querySelector('.document-layout')?.remove();
             this.video.classList.remove('unflip');
+            this.canvasElement.classList.remove('unflip');
             this.imageEmbedder.close();
             this.checkAndCompareUserPictures(type);
         }
-        setTimeout(() => this.toggleDevData(null, null, true), 1000)
+        setTimeout(() => this.toggleDevData(null, null, true), 1000);
     }
 
     private async setupVideoAndCanvas() {
-        this.toggleLoader(true);
         this.video = document.querySelector('#user-video') as HTMLVideoElement;
         this.canvasElement = document.querySelector('#user-canvas') as HTMLCanvasElement;
         this.canvasCtx = this.canvasElement.getContext("2d") as CanvasRenderingContext2D;
@@ -110,142 +120,100 @@ export class MediaPipeService {
         else document.querySelector('.spinner')?.remove();
     }
 
-    retryChallenge(type: 'SEL' | 'DOC') {
-        if (type == 'SEL') this.__selfieChallenge();
-        if (type == 'DOC') this.__docChallenge();
+    commonChallengeSet(type: 'POL' | 'SEL' | 'DOC' | 'KYC'): { time: number, results: any } | false {
+        this.toggleLoader(true);
+        if (this.checkMediaAccess()) return false;
+        c(`[${type}] - strating challenge...`);
+        this.setupVideoAndCanvas(); this.tracking = true;
+        this.userChallenges[type].done = false;
+        return { time: -1, results: null }
     }
 
     __polChallenge = async () => {
-        this.userChallenges['POL'].done = false;
-        console.log('👨‍💻 - strating POL challenge...');
-        if (this.checkMediaAccess()) return;
+        const ccs = this.commonChallengeSet('POL');
+        if (!ccs) return;
         this.faceLandmarker.applyOptions({ runningMode: "VIDEO" });
-        this.setupVideoAndCanvas(); this.tracking = true;
-        let lastVideoTime = -1; let results: any = undefined;
         let predictWebcam = async () => {
-            this.canvasElement.width = this.video.videoWidth; this.canvasElement.height = this.video.videoHeight; // Match Video & Canvas sizes.
-            lastVideoTime !== this.video.currentTime && (lastVideoTime = this.video.currentTime, results = this.faceLandmarker?.detectForVideo(this.video, Date.now()));// Send the video frame to the model.
-            if (lastVideoTime > 0) {
+            ccs.time !== this.video.currentTime && (ccs.time = this.video.currentTime, ccs.results = this.faceLandmarker?.detectForVideo(this.video, Date.now()));// Send the video frame to the model.
+            if (ccs.time > 0) {
+                this.canvasElement.width = this.video.videoWidth; this.canvasElement.height = this.video.videoHeight;
                 document.querySelectorAll('.user-media:not(#user-overlay)')?.forEach(el => el.classList.add('tracking'));
                 const drawingUtils = new DrawingUtils(this.canvasCtx!);
-                // console.log(results);
-                // Check if the user blinked (you can customize this to expect a smile, etc). Let's assume there is only one face.
-                if (results.faceLandmarks && results.faceBlendshapes && results.faceBlendshapes[0]) {
-                    // console.log(results.faceBlendshapes![0].categories);
-                    if (results.faceBlendshapes![0].categories?.find((shape: Category) => shape?.categoryName == "eyeBlinkRight")?.score > 0.4) {
+
+                if (ccs.results.faceLandmarks && ccs.results.faceBlendshapes && ccs.results.faceBlendshapes[0]) {
+                    if (ccs.results.faceBlendshapes![0].categories?.find((shape: Category) => shape?.categoryName == "eyeBlinkRight")?.score > 0.4) {
                         (this.polChallenges['blink'].done = true, console.warn('Blink!'));
                     }// Blynk.
-                    if (results.faceBlendshapes![0].categories?.find((shape: Category) => shape?.categoryName == "mouthSmileLeft")?.score > 0.6 &&
-                        results.faceBlendshapes![0].categories?.find((shape: Category) => shape?.categoryName == "mouthSmileRight")?.score > 0.6) {
+                    if (ccs.results.faceBlendshapes![0].categories?.find((shape: Category) => shape?.categoryName == "mouthSmileLeft")?.score > 0.6 &&
+                        ccs.results.faceBlendshapes![0].categories?.find((shape: Category) => shape?.categoryName == "mouthSmileRight")?.score > 0.6) {
                         (this.polChallenges['smile'].done = true, console.warn('Smile!'));
                     }// Smile.
                 }
-                // Draw the results on the canvas (comment this out to improve performance or add even more markers like mouth, etc).
-                if (results.faceLandmarks && this.displayDraws) for (const landmarks of results.faceLandmarks) {
-                    [FaceLandmarker.FACE_LANDMARKS_TESSELATION, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE, FaceLandmarker.FACE_LANDMARKS_LEFT_EYE]
+                if (ccs.results.faceLandmarks && this.devMode) for (const landmarks of ccs.results.faceLandmarks) {
+                    [FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE, FaceLandmarker.FACE_LANDMARKS_LEFT_EYE]
                         .every((type, i) => drawingUtils.drawConnectors(landmarks, type, { color: "#C0C0C070", lineWidth: i == 0 ? 1 : 4 }))
                 };
-
-                // drawingUtils.drawConnectors(results.faceLandmarks[0], FaceLandmarker.FACE_LANDMARKS_TESSELATION, { color: "#FF0000", lineWidth: 10 })
-                // drawingUtils.drawConnectors(results.faceLandmarks[0], FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, { color: "#FF0000", lineWidth: 20 });
-                // drawingUtils.drawLandmarks(results.faceLandmarks[0], { color: "#FF0000", lineWidth: 5, radius: 8 });
                 if (this.polChallenges['blink'].done && this.polChallenges['smile'].done) setTimeout(() => this.userChallenges['POL'].done = true, 1000);
             }
-            if (this.userChallenges['POL'].done) {
-                // this.captureImage().then(() => {
-                    this.stopTracking(true, 'POL');
-                // })
-                return;
-            };
+            if (this.userChallenges['POL'].done) { this.stopTracking(true, 'POL'); return; };
             this.tracking == true && window.requestAnimationFrame(predictWebcam);
         }
         this.getUserMedia(predictWebcam, true);
-        console.log('👨‍💻 - challenge ready and running...');
+        c('👨‍💻 - challenge ready and running...');
     }
 
     __selfieChallenge = async () => {
-        this.userChallenges['SEL'].done = false;
-        console.log('👨‍💻 - strating SEL challenge...');
-        if (this.checkMediaAccess()) return;
-
-        this.setupVideoAndCanvas(); this.tracking = true;
+        const ccs = this.commonChallengeSet('SEL');
+        if (!ccs) return;
         this.faceLandmarker.applyOptions({ runningMode: "VIDEO" });
-
-        let lastVideoTime = -1; let results: any = undefined;
         let predictWebcam = async () => {
-            this.canvasElement.width = this.video.videoWidth; this.canvasElement.height = this.video.videoHeight; // Match Video & Canvas sizes.
-            lastVideoTime !== this.video.currentTime && (lastVideoTime = this.video.currentTime, results = this.faceLandmarker?.detectForVideo(this.video, Date.now()));// Send the video frame to the model.
-
-            if (lastVideoTime > 0) {
-                document.querySelectorAll('.user-media:not(#user-overlay)')?.forEach(el => el.classList.add('tracking'));
-                document.querySelector('#user-overlay')?.classList.add('tracking');
-                if (results.faceLandmarks[0] && results.faceLandmarks[0][0] && results.faceLandmarks[0][0]?.x > 0.45 && results.faceLandmarks[0][0]?.x < 0.55 &&
-                    results.faceLandmarks[0][0]?.y > 0.5 && results.faceLandmarks[0][0]?.y < 0.7 && !this.userChallenges['SEL'].done) {
+            this.canvasElement.width = this.video.videoWidth; this.canvasElement.height = this.video.videoHeight;
+            ccs.time !== this.video.currentTime && (ccs.time = this.video.currentTime, ccs.results = this.faceLandmarker?.detectForVideo(this.video, Date.now()));// Send the video frame to the model.
+            if (ccs.time > 0) {
+                document.querySelectorAll('.user-media')?.forEach(el => el.classList.add('tracking'));
+                if (ccs.results.faceLandmarks[0] && ccs.results.faceLandmarks[0][0] && ccs.results.faceLandmarks[0][0]?.x > 0.45 && ccs.results.faceLandmarks[0][0]?.x < 0.55 &&
+                    ccs.results.faceLandmarks[0][0]?.y > 0.5 && ccs.results.faceLandmarks[0][0]?.y < 0.7 && !this.userChallenges['SEL'].done) {
                     document.querySelector('#user-overlay')?.classList.add('user-ok');
                     setTimeout(() => !this.userChallenges['SEL'].done && (this.userChallenges['SEL'].done = true), 1000);
                 } else { try { document.querySelector('#user-overlay')?.classList.remove('user-ok'); } catch (error) { } }
-
-                if (this.userChallenges['SEL'].done) {
-                    this.captureImage().then((img) => { this.userPictures.selfie.raw = img as Blob; this.stopTracking(true, 'SEL'); });
-                    return;
-                };
+                if (this.userChallenges['SEL'].done) { this.captureImage().then((img) => { this.userPictures.selfie.raw = img as Blob; this.stopTracking(true, 'SEL'); }); return; };
             }
             this.tracking == true && window.requestAnimationFrame(predictWebcam);
         }
         this.getUserMedia(predictWebcam, true);
-        console.log('👨‍💻 - challenge ready and running...');
+        c('👨‍💻 - challenge ready and running...');
     }
 
     __docChallenge = async () => {
-        this.userChallenges['DOC'].done = false;
-
-        this.toggleLoader(true);
+        const ccs = this.commonChallengeSet('DOC');
+        if (!ccs) return;
         await this.initEmbedder();
-        this.getLocaleCode();
-        const userDoc = buildElement('img', { src: this.getDocumentByLocale(this.getLocaleCode()), class: 'user-document front-document' })
-        console.log(userDoc);
-        const imgRef = document.body.appendChild(userDoc);
-        setTimeout(() => {
-            this.imageEmbeddings.front = this.imageEmbedder.embed(imgRef as HTMLImageElement);
-
-            if (this.checkMediaAccess()) return;
-            this.setupVideoAndCanvas(); this.tracking = true;
-            this.video.classList.add('unflip');
-            this.canvasElement.classList.add('unflip');
+        const userDocFront = document.body.appendChild(buildElement('img', { src: this.getDocumentByLocale(this.getLocaleCode()), class: 'user-document front-document' }))
+        setTimeout(() => { // Wait for the image to be available.
+            this.imageEmbeddings.front = this.imageEmbedder.embed(userDocFront as HTMLImageElement);
+            // this.imageEmbeddings.back = this.imageEmbedder.embed(userDocBack as HTMLImageElement);
             this.imageEmbedder.applyOptions({ runningMode: "VIDEO" });
-            let lastVideoTime = -1; let results: any = undefined;
+            this.video.classList.add('unflip'); this.canvasElement.classList.add('unflip');
             let predictWebcam = async () => {
-                this.canvasElement.width = this.video.videoWidth; this.canvasElement.height = this.video.videoHeight; // Match Video & Canvas sizes.
-                lastVideoTime !== this.video.currentTime && (lastVideoTime = this.video.currentTime, results = this.imageEmbedder?.embedForVideo(this.video, Date.now()));// Send the video frame to the model.
-
-                if (lastVideoTime > 0) {
-
+                this.canvasElement.width = this.video.videoWidth; this.canvasElement.height = this.video.videoHeight;
+                ccs.time !== this.video.currentTime && (ccs.time = this.video.currentTime, ccs.results = this.imageEmbedder?.embedForVideo(this.video, Date.now()));// Send the video frame to the model.
+                if (ccs.time > 0) {
                     document.querySelectorAll('.user-media:not(#user-overlay)')?.forEach(el => el.classList.add('tracking'));
                     if (!document.querySelector('.document-layout')) document.querySelector('.challenge-page')!.appendChild(buildElement('div', { class: 'user-media document-layout tracking' }, [docLayout]));
-
-                    if (this.imageEmbeddings.front && results) {
-                        const similarity = ImageEmbedder.cosineSimilarity(
-                            this.imageEmbeddings.front!.embeddings[0],
-                            results.embeddings[0]
-                        );
-                        // Tiene que estar bien iluminado para llegar a este nivel de confidence...
-                        console.log(similarity);
+                    if (this.imageEmbeddings.front && ccs.results) { // The better the light and the camera, the better the results.
+                        const similarity = ImageEmbedder.cosineSimilarity(this.imageEmbeddings.front!.embeddings[0], ccs.results.embeddings[0]);
                         if (this.devMode) this.toggleDevData('DOC', { similarity: similarity?.toString()?.substring(0, 5) });
                         if ((!this.isMobile() && similarity > 0.15) || (this.isMobile() && similarity > 0.4)) { // ^0.4
-                            console.log('Match');
-                            setTimeout(() => !this.userChallenges['DOC'].done && (this.userChallenges['DOC'].done = true), 1000)
+                            setTimeout(() => !this.userChallenges['DOC'].done && (this.userChallenges['DOC'].done = true), 1000); c('Match!');
                         }
                     }
                 }
-                if (this.userChallenges['DOC'].done) {
-                    this.captureImage('DOC').then((img) => { this.userPictures.doc.raw = img as Blob; this.stopTracking(true, 'DOC'); });
-                    return;
-                };
+                if (this.userChallenges['DOC'].done) { this.captureImage('DOC').then((img) => { this.userPictures.doc.raw = img as Blob; this.stopTracking(false, 'DOC'); }); return; };
                 this.tracking == true && window.requestAnimationFrame(predictWebcam);
             }
             const docLayout = this.getDocumentLayoutByLocale(this.getLocaleCode());
-            this.getUserMedia(predictWebcam, { facingMode: 'environment', aspectRatio: { ideal: 1.7777777778 } });
-            console.log('👨‍💻 - challenge ready and running...');
+            this.getUserMedia(predictWebcam, { facingMode: 'environment', aspectRatio: { ideal: 16/9 } });
+            c('challenge ready and running...');
         }, 500);
     }
 
@@ -279,28 +247,21 @@ export class MediaPipeService {
             this.toggleLoader(false);
 
             if (this.userPictures.selfie.masked != undefined && this.userPictures.doc.masked != undefined) {
-                console.log('both masked images are ready to be compared');
+                c('both masked images are ready to be compared');
                 this.imageEmbedder.applyOptions({ runningMode: "IMAGE" });
                 const selfieEmbed = this.imageEmbedder.embed(this.userPictures.selfie.masked);
                 const docEmbed = this.imageEmbedder.embed(this.userPictures.doc.masked);
-                const similarity = ImageEmbedder.cosineSimilarity(
-                    selfieEmbed!.embeddings[0],
-                    docEmbed!.embeddings[0]
-                );
-                console.log('masks compared w similarity: ', similarity);
+                const similarity = ImageEmbedder.cosineSimilarity(selfieEmbed!.embeddings[0], docEmbed!.embeddings[0]);
+                c('masks compared w similarity: ' + similarity);
                 if (this.devMode) this.toggleDevData('SELvsDOC', { similarity: similarity?.toString()?.substring(0, 5) });
-                if (similarity > 0.9) {
-                    console.log('Match');
-                }
-            } else console.log('one or both masked images are not ready to be compared', this.userPictures.selfie.masked, this.userPictures.doc.masked);
+                if (similarity > 0.9) { console.log('Match'); }
+            } else c('one or both masked images are not ready to be compared' + this.userPictures.selfie.masked + this.userPictures.doc.masked);
         }
     }
 
     composeMaskedCanvas(imageParam: Blob, type: 'SEL' | 'DOC') {
         return new Promise((resolve, _) => {
-            console.log('generating canvas mask');
             this.faceLandmarker.applyOptions({ runningMode: "IMAGE" });
-            // 1) Check and generate the canvas to draw.
             if (!document.querySelector('#composite-canvas')) document.body.appendChild(buildElement('canvas', { id: 'composite-canvas', class: this.devMode ? 'dev' : '' }));
             if (!document.querySelector('#composite-picture')) document.body.appendChild(buildElement('canvas', { id: 'composite-picture', class: this.devMode ? 'dev' : '' }));
 
@@ -317,13 +278,13 @@ export class MediaPipeService {
                 const landmarks = this.faceLandmarker.detect(picture);
                 await new Promise((resolve, _) => setTimeout(() => resolve(null), 1000));
                 if (!landmarks.faceLandmarks[0]) {
-                    console.log('No landmarks found, user needs to retry...');
-                    this.retryChallenge(type);
+                    c('No landmarks found, user needs to retry...');
+                    this.markAsFailed(type);
                     return;
                 };
+                this.markAsDone(type);
                 console.log('Generating Landmarks from saved picture...', landmarks);
                 ctx!.scale(0.8, 0.8);
-                // drawingUtils.drawConnectors(landmarks.faceLandmarks[0], FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, { color: "#FF0000", lineWidth: 20 * mlr });
                 drawingUtils.drawConnectors(landmarks.faceLandmarks[0], FaceLandmarker.FACE_LANDMARKS_TESSELATION, { color: "#FF0000", lineWidth: 10 * mlr })
                 drawingUtils.drawLandmarks(landmarks.faceLandmarks[0], { color: "#FF0000", lineWidth: 5 * mlr, radius: 8 });
 
@@ -334,7 +295,6 @@ export class MediaPipeService {
                     if (type == 'DOC') ctx!.filter = 'grayscale(100%)';
                     let landmarkImage = new Image();
                     landmarkImage.src = URL.createObjectURL(landmarkBlob!);
-
 
                     landmarkImage.onload = () => {
                         ctx!.scale(1, 1);
@@ -347,11 +307,11 @@ export class MediaPipeService {
                             masked.onload = () => {
                                 if (type == 'SEL') {
                                     this.userPictures.selfie.masked = masked!;
-                                    resolve(masked!);
+                                    resolve(masked!); // complete promise.
                                 }
                                 if (type == 'DOC') {
                                     this.userPictures.doc.masked = masked!;
-                                    resolve(masked!);
+                                    resolve(masked!); // complete promise.
                                 }
                             }
                         });
@@ -359,7 +319,18 @@ export class MediaPipeService {
                 });
             };
         })
+    }
 
+    markAsDone(type: 'SEL' | 'DOC' | 'POL' | 'KYC') {
+        this.toggleLoader(false);
+        setTimeout(() => {
+            document.querySelector(`#${this.userChallenges[type].id}`)?.classList.toggle('challenge-done', true);
+            document.querySelector(`#${this.userChallenges[type].id}`)?.classList.contains('challenge-failed') && document.querySelector(`#${this.userChallenges[type].id}`)?.classList.remove('challenge-failed')
+        }, 300);
+    }
+    markAsFailed(type: 'SEL' | 'DOC' | 'POL' | 'KYC') {
+        this.toggleLoader(false);
+        setTimeout(() => document.querySelector(`#${this.userChallenges[type].id}`)?.classList.toggle('challenge-failed', true), 300);
     }
 
     getLocaleCode = () => 'es-UY';
@@ -377,6 +348,7 @@ export class MediaPipeService {
         }
     }
 
+    isMobile = () => /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
     toggleDevData(type: 'SEL' | 'DOC' | 'POL' | 'SELvsDOC' | null, data: any, destroy?: boolean) {
         if (destroy) return document.querySelector('#dev-data')?.remove();
@@ -390,5 +362,4 @@ export class MediaPipeService {
         }
     }
 
-    isMobile = () => /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
