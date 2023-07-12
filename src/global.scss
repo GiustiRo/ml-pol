@@ -72,7 +72,7 @@ body {
 
 }
 
-#user-video{
+#user-video, #user-canvas{
     transform: scaleX(-1);
 }
 .unflip{
@@ -86,7 +86,9 @@ body {
     scale: 0.7;
     box-shadow: 0 0 50px 400px #00000090;
     z-index: 999999999;
-    border-radius: 50%;
+    border-radius: 45%;
+    max-height: 90vh;
+    transform: translateY(5vh);
 
     &.user-ok {
         border-color: #7aaf2a;
@@ -316,4 +318,22 @@ button {
     to {
         box-shadow: 0 0 50px 200px #00000090;
     }
+}
+
+#composite-canvas, #composite-picture{
+    position: fixed;
+    top: 0;
+    // left: 0;
+    z-index: 9999999999999999999999;
+    width: 200px;
+    height: 200px;
+    background-color: transparent;
+    transform: scaleX(-1);
+    object-fit: cover;
+}
+#composite-canvas{
+    left: 0;
+}
+#composite-picture{
+    right: 0;
 }
