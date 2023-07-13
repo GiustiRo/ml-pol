@@ -203,9 +203,8 @@ body {
         content: "✅";
         margin-left: calc(var(--size-1) * 0.4);
         position: absolute;
-        translate: 0 20px;
+        translate: 19rem 20px;
         opacity: 1;
-        right: 10px;
     }
 
     .asset-wrap {
@@ -225,9 +224,8 @@ body {
         content: "❌";
         margin-left: calc(var(--size-1) * 0.4);
         position: absolute;
-        translate: 0 20px;
+        translate: 19rem 20px;
         opacity: 1;
-        right: 10px;
     }
     .asset-wrap {
         opacity: 1;

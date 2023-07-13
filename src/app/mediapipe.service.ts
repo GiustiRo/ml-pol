@@ -75,7 +75,7 @@ export class MediaPipeService {
 
     checkMediaAccess = () => (!(!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) || !this.faceLandmarker) && (console.warn("user media or ml model is not available"), this.toggleLoader(false), false);
 
-    getUserMedia = (predictWebcam: any, videoParams: any) => navigator.mediaDevices.getUserMedia({ video: { ...videoParams, width: {ideal: 1920}, height: {ideal: 1080} } }).then((stream) => (this.video.srcObject = stream, this.video.addEventListener("loadeddata", predictWebcam)));
+    getUserMedia = (predictWebcam: any, videoParams: any) => navigator.mediaDevices.getUserMedia({ video: { ...videoParams, width: { ideal: 1920, max: 1920 }, height: { ideal: 1080, max: 1080 } } }).then((stream) => (this.video.srcObject = stream, this.video.addEventListener("loadeddata", predictWebcam)));
 
     preloadState = (type: 'POL' | 'SEL' | 'DOC' | 'KYC') => {
         this.toggleLoader(true);
@@ -191,7 +191,7 @@ export class MediaPipeService {
         const userDocFront = document.body.appendChild(buildElement('img', { src: this.getDocumentByLocale(this.getLocaleCode()), class: 'user-document front-document' }))
         setTimeout(() => { // Wait for the image to be available.
             this.imageEmbeddings.front = this.imageEmbedder.embed(userDocFront as HTMLImageElement);
-            // this.imageEmbeddings.back = this.imageEmbedder.embed(userDocBack as HTMLImageElement);
+            /*TODO*/// this.imageEmbeddings.back = this.imageEmbedder.embed(userDocBack as HTMLImageElement);
             this.imageEmbedder.applyOptions({ runningMode: "VIDEO" });
             this.video.classList.add('unflip'); this.canvasElement.classList.add('unflip');
             let predictWebcam = async () => {
@@ -212,7 +212,7 @@ export class MediaPipeService {
                 this.tracking == true && window.requestAnimationFrame(predictWebcam);
             }
             const docLayout = this.getDocumentLayoutByLocale(this.getLocaleCode());
-            this.getUserMedia(predictWebcam, { facingMode: 'environment', aspectRatio: { ideal: 16/9 } });
+            this.getUserMedia(predictWebcam, { facingMode: 'environment', aspectRatio: { ideal: 16 / 9 } });
             c('challenge ready and running...');
         }, 500);
     }
@@ -222,15 +222,27 @@ export class MediaPipeService {
     captureImage(type?: 'SEL' | 'DOC') {
         return new Promise((resolve, _) => {
             console.warn('Capturing video frame...');
-            this.canvasCtx.drawImage(this.video, 0, 0, this.video.videoWidth, this.video.videoHeight);
             if (type == 'DOC') {
-                console.warn('TRY TO ROTATE...');
-            }
+                // Rotate the canvas by 90degs before drawing the video frame.
+                const mlr = this.isMobile() ? 1.2 : 1.8;
+                this.canvasCtx.translate(0, this.canvasElement.height * mlr);
+                this.canvasCtx.rotate(-90 * Math.PI / 180);
+                this.canvasCtx.scale(1.2, 1.2);
+                this.canvasCtx.drawImage(this.video, 0, 0, this.video.videoWidth, this.video.videoHeight);
+            } else this.canvasCtx.drawImage(this.video, 0, 0, this.video.videoWidth, this.video.videoHeight);
+
             this.canvasElement.toBlob((blob) => {
                 resolve(blob);
-                // const reader = new FileReader();
-                // reader.onloadend = () => { resolve(reader.result); console.log('👨‍💻 - image captured!', reader.result); };
-                // reader.readAsDataURL(blob!);
+                if (this.devMode) { // Grab base64 and check the result.
+                    const reader = new FileReader();
+                    reader.onloadend = () => { resolve(reader.result); console.log('👨‍💻 - image captured!', reader.result); };
+                    reader.readAsDataURL(blob!);
+                }
+                if (type == 'DOC') {
+                    this.canvasCtx.rotate(-90 * Math.PI / 180);
+                    this.canvasCtx.translate(-this.canvasElement.width / 2, -this.canvasElement.height / 2);
+                }
+
             });
         });
     }
