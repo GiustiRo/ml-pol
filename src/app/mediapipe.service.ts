@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Category, DrawingUtils, FaceLandmarker, FilesetResolver, ImageEmbedder, ImageEmbedderResult } from '@mediapipe/tasks-vision';
+import { Category, DrawingUtils, FaceLandmarker, FilesetResolver, ImageClassifier, ImageClassifierResult, ImageEmbedder, ImageEmbedderResult } from '@mediapipe/tasks-vision';
 import { buildElement } from './MLPOL';
 
 const c = (msg: any) => console.log('👨‍💻 - ' + msg);
@@ -11,12 +11,14 @@ export class MediaPipeService {
     // ML Model and properties (WASM & Model provided by Google, you can place your own).
     private faceLandmarker!: FaceLandmarker;
     private imageEmbedder!: ImageEmbedder;
+    private imageClassifier!: ImageClassifier;
     private wasmUrl: string = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm";
     // private modelAssetPath_FaceLandmarker: string = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
     // private modelAssetPath_Embedder: string = "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite";
     private modelsPaths = {
         faceLandmarker: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-        embedder: "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite"
+        embedder: "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite",
+        clasifier: "https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/float32/1/efficientnet_lite0.tflite"
     }
     // Native elements and types we need to interact to later.
     // private page!: HTMLElement;
@@ -73,6 +75,14 @@ export class MediaPipeService {
         });
     }
 
+    private async initImageClassifier() {
+        return this.imageClassifier = await ImageClassifier.createFromOptions(
+            await FilesetResolver.forVisionTasks(this.wasmUrl), {
+            baseOptions: { modelAssetPath: this.modelsPaths.clasifier },
+            runningMode: "IMAGE", maxResults: 10,
+        });
+    }
+
     checkMediaAccess = () => (!(!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) || !this.faceLandmarker) && (console.warn("user media or ml model is not available"), this.toggleLoader(false), false);
 
     getUserMedia = (predictWebcam: any, videoParams: any) => navigator.mediaDevices.getUserMedia({ video: { ...videoParams, width: { ideal: 1920, max: 1920 }, height: { ideal: 1080, max: 1080 } } }).then((stream) => (this.video.srcObject = stream, this.video.addEventListener("loadeddata", predictWebcam)));
@@ -86,7 +96,7 @@ export class MediaPipeService {
         }, 300);
     }
 
-    private stopTracking(done: boolean = false, type: 'SEL' | 'POL' | 'DOC' | 'KYC') { // Stop and clear the video & canvas
+    private async stopTracking(done: boolean = false, type: 'SEL' | 'POL' | 'DOC' | 'KYC') { // Stop and clear the video & canvas
         this.tracking = false; this.video.removeAllListeners!("loadeddata");
         (this.video.srcObject as MediaStream).getTracks().forEach(track => track.stop());
         this.canvasCtx.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
@@ -96,7 +106,10 @@ export class MediaPipeService {
         document.querySelectorAll('.user-media')?.forEach(el => el.classList.remove('tracking'));
         if (done) this.markAsDone(type);
         if (type == 'SEL') {
-            this.checkAndCompareUserPictures(type);
+            if (await this.postSelfieValidation()) {
+                this.checkAndCompareUserPictures(type);
+                this.markAsDone(type);
+            } else { this.markAsFailed(type) }
         }
         if (type == 'DOC') {
             document.querySelector('.document-layout')?.remove();
@@ -176,7 +189,7 @@ export class MediaPipeService {
                     document.querySelector('#user-overlay')?.classList.add('user-ok');
                     setTimeout(() => !this.userChallenges['SEL'].done && (this.userChallenges['SEL'].done = true), 1000);
                 } else { try { document.querySelector('#user-overlay')?.classList.remove('user-ok'); } catch (error) { } }
-                if (this.userChallenges['SEL'].done) { this.captureImage().then((img) => { this.userPictures.selfie.raw = img as Blob; this.stopTracking(true, 'SEL'); }); return; };
+                if (this.userChallenges['SEL'].done) { this.captureImage().then((img) => { this.userPictures.selfie.raw = img as Blob; this.stopTracking(false, 'SEL'); }); return; };
             }
             this.tracking == true && window.requestAnimationFrame(predictWebcam);
         }
@@ -217,8 +230,31 @@ export class MediaPipeService {
         }, 500);
     }
 
+    // Detect undesired objets for selfie validations (sunglasses, caps, etc.);
+    postSelfieValidation = async () => {
+        this.toggleLoader(true);
+        const unwanted = ['sunglasses', 'sunglass', 'cap', 'hat', 'headphones', 'headset', 'earphones', 'mask', 'gasmask', 'oxygen mask', 'ski mask', 'harmonica', 'ocarina', 'handkerchief', 'headgear', 'headwear', 'head covering'];
+        await this.initImageClassifier();
+        return await new Promise((resolve, _) => {
+            const picture = new Image();
+            picture.src = URL.createObjectURL(this.userPictures.selfie.raw!);
+            picture.onload = async () => {
+                const imageClassifierResult: ImageClassifierResult = this.imageClassifier.classify(picture);
+                if (this.devMode) console.log('objects:', imageClassifierResult);
+                if (imageClassifierResult?.classifications.length) {
+                    imageClassifierResult.classifications[0].categories.filter((obj) => {
+                        if (unwanted.some(catName => obj.categoryName == catName) && obj.score > 0.1) {
+                            alert(`Please remove any accessory you are wareing and try again.\n (avoid using sunglasses, masks, headphones, etc)`);
+                            this.toggleLoader(false); resolve(false);
 
+                        } else { this.toggleLoader(false); resolve(true); }
+                    })
+                }
+            };
+        });
+    }
 
+    // Utility to take pictures from video streams.
     captureImage(type?: 'SEL' | 'DOC') {
         return new Promise((resolve, _) => {
             console.warn('Capturing video frame...');
@@ -253,7 +289,6 @@ export class MediaPipeService {
             if (type == 'DOC') await this.composeMaskedCanvas(this.userPictures.doc.raw!, type);
             console.warn('MASK COMPOSED: ', type);
             this.toggleLoader(false);
-
             if (this.userPictures.selfie.masked != undefined && this.userPictures.doc.masked != undefined) {
                 c('both masked images are ready to be compared');
                 this.imageEmbedder.applyOptions({ runningMode: "IMAGE" });
@@ -276,7 +311,7 @@ export class MediaPipeService {
             if (type == 'DOC') canvas = document.querySelector('#composite-picture') as HTMLCanvasElement;
             let ctx = canvas?.getContext('2d');
             const drawingUtils = new DrawingUtils(ctx!);
-            const mlr = this.isMobile() ? type == 'SEL' ? 3.2 : 2 : 1;
+            const mlr = this.isMobile() ? type == 'SEL' ? 3.5 : 2 : 1;
             if (this.isMobile()) canvas.classList.add('is-mobile');
 
             let picture = new Image();
@@ -300,10 +335,10 @@ export class MediaPipeService {
                     landmarkImage.src = URL.createObjectURL(landmarkBlob!);
                     landmarkImage.onload = () => {
                         canvas.width = picture.width; canvas.height = picture.height;
-                        ctx!.scale(1, 1);
                         ctx!.globalCompositeOperation = 'source-over';
-                        if (type == 'SEL') ctx!.filter = 'grayscale(100%) contrast(80%)';
-                        if (type == 'DOC') ctx!.filter = 'grayscale(100%)';
+
+                        if (type == 'SEL') { ctx!.filter = 'grayscale(100%) contrast(80%) brightness(120%)'; /*ctx!.scale(0.8, 0.8);*/ }
+                        if (type == 'DOC') { ctx!.filter = 'grayscale(100%)'; /*ctx!.scale(1, 1);*/ }
 
                         const faceTight = type == 'SEL' && !this.isMobile() ? picture.width * 0.10 : 0; // ~10% of the picture width to fit the face tightly.
                         ctx!.drawImage(picture, 0, 0, type == 'SEL' ? picture.width * 0.8 : picture.width, type == 'SEL' ? picture.height * 0.8 : picture.height);
