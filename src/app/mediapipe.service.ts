@@ -233,11 +233,8 @@ export class MediaPipeService {
 
             this.canvasElement.toBlob((blob) => {
                 resolve(blob);
-                if (this.devMode) { // Grab base64 and check the result.
-                    const reader = new FileReader();
-                    reader.onloadend = () => { resolve(reader.result); console.log('👨‍💻 - image captured!', reader.result); };
-                    reader.readAsDataURL(blob!);
-                }
+                // Grab base64 and check the result.
+                if (this.devMode) { this.base64FromBlob(blob!); }
                 if (type == 'DOC') {
                     this.canvasCtx.rotate(-90 * Math.PI / 180);
                     this.canvasCtx.translate(-this.canvasElement.width / 2, -this.canvasElement.height / 2);
@@ -281,12 +278,19 @@ export class MediaPipeService {
             if (type == 'DOC') canvas = document.querySelector('#composite-picture') as HTMLCanvasElement;
             let ctx = canvas?.getContext('2d');
             const drawingUtils = new DrawingUtils(ctx!);
-            const mlr = 0.2
-            const canvasSize = 800;
+
+            const mlr = this.isMobile() ? type == 'SEL' ? 3.2 : 2 : 1;
+            if (this.isMobile()) canvas.classList.add('is-mobile');
+
+            let canvasSize = 1000;
 
             let picture = new Image();
             picture.src = URL.createObjectURL(imageParam!);
             picture.onload = async () => {
+
+                // canvas.width = picture.width; canvas.height = picture.height;
+                // canvasSize = picture.width;
+
                 const landmarks = this.faceLandmarker.detect(picture);
                 await new Promise((resolve, _) => setTimeout(() => resolve(null), 1000));
                 if (!landmarks.faceLandmarks[0]) {
@@ -296,23 +300,37 @@ export class MediaPipeService {
                 };
                 this.markAsDone(type);
                 console.log('Generating Landmarks from saved picture...', landmarks);
-                ctx!.scale(0.8, 0.8);
-                drawingUtils.drawConnectors(landmarks.faceLandmarks[0], FaceLandmarker.FACE_LANDMARKS_TESSELATION, { color: "#FF0000", lineWidth: 10 * mlr })
-                drawingUtils.drawLandmarks(landmarks.faceLandmarks[0], { color: "#FF0000", lineWidth: 5 * mlr, radius: 8 });
 
+                canvas.width = picture.width; canvas.height = picture.height;
+
+                drawingUtils.drawConnectors(landmarks.faceLandmarks[0], FaceLandmarker.FACE_LANDMARKS_TESSELATION, { color: "#FF0000", lineWidth: 10 * mlr })
+                drawingUtils.drawLandmarks(landmarks.faceLandmarks[0], { color: "#FF0000", lineWidth: 5 * mlr, radius: !this.isMobile() ? type == 'SEL' ? 28 : 18 : 8 });
+
+                // if(type == 'SEL') ctx!.scale(0.5,0.5);
                 canvas.toBlob((landmarkBlob) => {
-                    ctx!.clearRect(0, 0, canvasSize, canvasSize);
-                    ctx!.globalCompositeOperation = 'source-over';
-                    if (type == 'SEL') ctx!.filter = 'grayscale(100%) contrast(80%)';
-                    if (type == 'DOC') ctx!.filter = 'grayscale(100%)';
+                    // ctx!.clearRect(0, 0, canvasSize, canvasSize);
+                    ctx!.clearRect(0, 0, picture.width, picture.height);
+
                     let landmarkImage = new Image();
                     landmarkImage.src = URL.createObjectURL(landmarkBlob!);
 
                     landmarkImage.onload = () => {
+                        canvas.width = picture.width; canvas.height = picture.height;
                         ctx!.scale(1, 1);
-                        ctx!.drawImage(picture, (canvasSize * 0.10), (canvasSize * -0.05), canvasSize / 4, canvasSize / 4);
-                        ctx!.globalCompositeOperation = 'destination-in';
-                        ctx!.drawImage(landmarkImage, (canvasSize * 0.10) + (0.2 * 100), (canvasSize * -0.05) + (0.2 * 100), canvasSize / 4, canvasSize / 4);
+                        ctx!.globalCompositeOperation = 'source-over';
+                        if (type == 'SEL') ctx!.filter = 'grayscale(100%) contrast(80%)';
+                        if (type == 'DOC') ctx!.filter = 'grayscale(100%)';
+                        // Working but odd img quality (skeezed).
+                        // ctx!.drawImage(picture, (canvasSize * 0.10), (canvasSize * -0.05), canvasSize / 4, canvasSize / 4);
+                        // ctx!.globalCompositeOperation = 'destination-in';
+                        // ctx!.drawImage(landmarkImage, (canvasSize * 0.10) + (0.2 * 100), (canvasSize * (this.isMobile() && type == 'DOC' ? -0.04 : -0.05)) + (0.2 * 100), canvasSize / 4, canvasSize / 4);
+
+                        const faceTight = type == 'SEL' && !this.isMobile() ? picture.width * 0.10 : 0;
+                        ctx!.drawImage(picture, 0, 0, type == 'SEL' ? picture.width * 0.8 : picture.width, type == 'SEL' ? picture.height * 0.8 : picture.height);
+                        ctx!.globalCompositeOperation = 'destination-in'; // Will mask the image with the landmarks.
+                        ctx!.drawImage(landmarkImage, faceTight * 0.9, 0, (type == 'SEL' ? picture.width * 0.8 : picture.width) - (faceTight * 2), type == 'SEL' ? picture.height * 0.8 : picture.height);
+
+
                         canvas.toBlob((maskedBlob) => {
                             let masked = new Image();
                             masked.src = URL.createObjectURL(maskedBlob!);
@@ -320,10 +338,13 @@ export class MediaPipeService {
                                 if (type == 'SEL') {
                                     this.userPictures.selfie.masked = masked!;
                                     resolve(masked!); // complete promise.
+                                    if (this.devMode) this.base64FromBlob(maskedBlob!);
+
                                 }
                                 if (type == 'DOC') {
                                     this.userPictures.doc.masked = masked!;
                                     resolve(masked!); // complete promise.
+                                    if (this.devMode) this.base64FromBlob(maskedBlob!);
                                 }
                             }
                         });
@@ -364,7 +385,7 @@ export class MediaPipeService {
 
     toggleDevData(type: 'SEL' | 'DOC' | 'POL' | 'SELvsDOC' | null, data: any, destroy?: boolean) {
         if (destroy) return document.querySelector('#dev-data')?.remove();
-        if (!document.querySelector('#dev-data')) { document.body.appendChild(buildElement('div', { id: 'dev-data' })); return };
+        if (!document.querySelector('#dev-data')) { document.body.appendChild(buildElement('div', { id: 'dev-data' })) };
         if (type == 'DOC') {
             document.querySelector('#dev-data')!.innerHTML = `${type} - ${JSON.stringify(data)}`;
         }
@@ -374,4 +395,9 @@ export class MediaPipeService {
         }
     }
 
+    base64FromBlob(blob: Blob) {
+        const reader = new FileReader();
+        reader.onloadend = () => { console.log('👨‍💻 - image captured!', reader.result); };
+        reader.readAsDataURL(blob!);
+    }
 }
