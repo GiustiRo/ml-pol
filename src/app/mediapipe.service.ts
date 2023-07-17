@@ -58,6 +58,11 @@ export class MediaPipeService {
         }
     }
 
+    selfiePictures = {
+        far: { taking: false, raw: undefined },
+        close: { taking: false, raw: undefined },
+    }
+
     constructor() { }
 
     async initMP(): Promise<FaceLandmarker> {
@@ -106,10 +111,16 @@ export class MediaPipeService {
         document.querySelectorAll('.user-media')?.forEach(el => el.classList.remove('tracking'));
         if (done) this.markAsDone(type);
         if (type == 'SEL') {
-            if (await this.postSelfieValidation()) {
+            try { document.querySelector('#user-overlay')?.classList.remove('user-ok'); } catch (error) { }
+            const isFaceClear = await this.postSelfieValidation();
+            this.toggleLoader(false);
+            if (isFaceClear) {
                 this.checkAndCompareUserPictures(type);
                 this.markAsDone(type);
-            } else { this.markAsFailed(type) }
+            } else {
+                alert(`Please remove any accessory you are wareing and try again.\n (avoid using sunglasses, masks, headphones, etc)`);
+                this.markAsFailed(type);
+            }
         }
         if (type == 'DOC') {
             document.querySelector('.document-layout')?.remove();
@@ -179,6 +190,10 @@ export class MediaPipeService {
         const ccs = this.commonChallengeSet('SEL');
         if (!ccs) return;
         this.faceLandmarker.applyOptions({ runningMode: "VIDEO" });
+        const passSEL = {
+            faceClose: false,
+            faceFar: false
+        }
         let predictWebcam = async () => {
             this.canvasElement.width = this.video.videoWidth; this.canvasElement.height = this.video.videoHeight;
             ccs.time !== this.video.currentTime && (ccs.time = this.video.currentTime, ccs.results = this.faceLandmarker?.detectForVideo(this.video, Date.now()));// Send the video frame to the model.
@@ -186,9 +201,42 @@ export class MediaPipeService {
                 document.querySelectorAll('.user-media')?.forEach(el => el.classList.add('tracking'));
                 if (ccs.results.faceLandmarks[0] && ccs.results.faceLandmarks[0][0] && ccs.results.faceLandmarks[0][0]?.x > 0.45 && ccs.results.faceLandmarks[0][0]?.x < 0.55 &&
                     ccs.results.faceLandmarks[0][0]?.y > 0.5 && ccs.results.faceLandmarks[0][0]?.y < 0.7 && !this.userChallenges['SEL'].done) {
-                    document.querySelector('#user-overlay')?.classList.add('user-ok');
-                    setTimeout(() => !this.userChallenges['SEL'].done && (this.userChallenges['SEL'].done = true), 1000);
-                } else { try { document.querySelector('#user-overlay')?.classList.remove('user-ok'); } catch (error) { } }
+                    console.log(+ccs.results.faceLandmarks[0][0]?.z);
+                    if (!passSEL.faceClose && +ccs.results.faceLandmarks[0][0]?.z < (this.isMobile() ? -0.09 : -0.040)) { // ~0.03
+                        console.log('close done..');
+                        passSEL.faceClose = true;
+                        document.querySelector('#user-overlay')?.classList.add('user-ok');
+                        await new Promise((resolve, _) => setTimeout(() => resolve(null), 1000));
+                        document.querySelector('#user-overlay')?.classList.remove('user-ok');
+                        (document.querySelector('#user-overlay') as HTMLElement).style.scale = '0.6 0.5';
+                        if (this.selfiePictures.close.taking) return;
+                        console.warn('taking close selfie...');
+                        this.selfiePictures.close.taking = true;
+                        this.captureImage().then((img) => {
+                            (this.selfiePictures.close.raw as unknown) = img as Blob;
+                            this.selfiePictures.close.taking = false;
+                        });
+                    }
+
+                    if (passSEL.faceClose && !passSEL.faceFar && +ccs.results.faceLandmarks[0][0]?.z > (this.isMobile() ? -0.07 : -0.027)) { // ~0.02
+                        console.log('far done..');
+
+                        passSEL.faceFar = true;
+                        document.querySelector('#user-overlay')?.classList.add('user-ok');
+                        await new Promise((resolve, _) => setTimeout(() => resolve(null), 1000));
+
+                        if (this.selfiePictures.far.taking) return;
+                        console.warn('taking close selfie...');
+                        this.selfiePictures.far.taking = true;
+                        this.captureImage().then((img) => {
+                            (this.selfiePictures.far.raw as unknown) = img as Blob;
+                            this.selfiePictures.far.taking = false;
+                        });
+
+                        if (passSEL.faceClose && passSEL.faceFar) setTimeout(() => !this.userChallenges['SEL'].done && (this.userChallenges['SEL'].done = true), 1000);
+                        // setTimeout(() => !this.userChallenges['SEL'].done && (this.userChallenges['SEL'].done = true), 1000);
+                    }
+                } else { try { } catch (error) { } }
                 if (this.userChallenges['SEL'].done) { this.captureImage().then((img) => { this.userPictures.selfie.raw = img as Blob; this.stopTracking(false, 'SEL'); }); return; };
             }
             this.tracking == true && window.requestAnimationFrame(predictWebcam);
@@ -231,25 +279,27 @@ export class MediaPipeService {
     }
 
     // Detect undesired objets for selfie validations (sunglasses, caps, etc.);
-    postSelfieValidation = async () => {
+    postSelfieValidation = async (): Promise<boolean> => {
         this.toggleLoader(true);
         const unwanted = ['sunglasses', 'sunglass', 'cap', 'hat', 'headphones', 'headset', 'earphones', 'mask', 'gasmask', 'oxygen mask', 'ski mask', 'harmonica', 'ocarina', 'handkerchief', 'headgear', 'headwear', 'head covering'];
         await this.initImageClassifier();
         return await new Promise((resolve, _) => {
             const picture = new Image();
-            picture.src = URL.createObjectURL(this.userPictures.selfie.raw!);
+            picture.src = URL.createObjectURL(this.selfiePictures.close.raw!);
             picture.onload = async () => {
                 const imageClassifierResult: ImageClassifierResult = this.imageClassifier.classify(picture);
                 if (this.devMode) console.log('objects:', imageClassifierResult);
                 if (imageClassifierResult?.classifications.length) {
-                    imageClassifierResult.classifications[0].categories.filter((obj) => {
-                        if (unwanted.some(catName => obj.categoryName == catName) && obj.score > 0.1) {
-                            alert(`Please remove any accessory you are wareing and try again.\n (avoid using sunglasses, masks, headphones, etc)`);
-                            this.toggleLoader(false); resolve(false);
-
-                        } else { this.toggleLoader(false); resolve(true); }
-                    })
+                    let clearFace = true;
+                    imageClassifierResult.classifications[0].categories.filter((obj, i) => {
+                        if (unwanted.some(catName => obj.categoryName == catName) && obj.score > (this.isMobile() ? 0.02 : 0.01)) {
+                            console.error('face is not clear!!!!');
+                            clearFace = false;
+                            resolve(clearFace);
+                        } else { if (i == imageClassifierResult.classifications[0].categories.length - 1 && clearFace) resolve(clearFace); }
+                    });
                 }
+                
             };
         });
     }
@@ -263,7 +313,7 @@ export class MediaPipeService {
                 const mlr = this.isMobile() ? 1.2 : 1.8;
                 this.canvasCtx.translate(0, this.canvasElement.height * mlr);
                 this.canvasCtx.rotate(-90 * Math.PI / 180);
-                this.canvasCtx.scale(1.2, 1.2);
+                this.canvasCtx.scale(1.3, 1.3);
                 this.canvasCtx.drawImage(this.video, 0, 0, this.video.videoWidth, this.video.videoHeight);
             } else this.canvasCtx.drawImage(this.video, 0, 0, this.video.videoWidth, this.video.videoHeight);
 
@@ -311,7 +361,7 @@ export class MediaPipeService {
             if (type == 'DOC') canvas = document.querySelector('#composite-picture') as HTMLCanvasElement;
             let ctx = canvas?.getContext('2d');
             const drawingUtils = new DrawingUtils(ctx!);
-            const mlr = this.isMobile() ? type == 'SEL' ? 3.5 : 2 : 1;
+            const mlr = this.isMobile() ? type == 'SEL' ? 3.8 : 2.4 : 1;
             if (this.isMobile()) canvas.classList.add('is-mobile');
 
             let picture = new Image();

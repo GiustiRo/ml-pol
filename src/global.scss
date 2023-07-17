@@ -24,6 +24,9 @@
 // @import "@ionic/angular/css/text-alignment.css";
 // @import "@ionic/angular/css/text-transformation.css";
 // @import "@ionic/angular/css/flex-utils.css";
+
+@import url('animations.scss');
+
 html,
 body {
     margin: 0;
@@ -85,15 +88,21 @@ body {
 #user-overlay {
     transition: .3s;
     border: 6px solid #ffffff90;
+    // background-image: linear-gradient(00deg, white 00%, transparent 50%);
     scale: 0.7;
-    box-shadow: 0 0 50px 400px #00000090;
+    box-shadow: 0 0 50px 800px #181818;
     z-index: 999999999;
     border-radius: 45%;
     max-height: 90vh;
     transform: translateY(5vh);
-
+    &::after{
+        position:absolute;
+        content: "-";
+    }
     &.user-ok {
-        border-color: #7aaf2a;
+        // background-image: linear-gradient(180deg, green 50%, transparent 50%);;
+        // border-color: #7aaf2a;
+        
     }
 }
 
