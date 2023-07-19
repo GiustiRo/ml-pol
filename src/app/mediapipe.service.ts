@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Category, DrawingUtils, FaceLandmarker, FilesetResolver, ImageClassifier, ImageClassifierResult, ImageEmbedder, ImageEmbedderResult } from '@mediapipe/tasks-vision';
-import { buildElement } from './MLPOL';
+import { buildElement, setMessage } from './MLPOL';
 
 const c = (msg: any) => console.log('👨‍💻 - ' + msg);
 
@@ -107,11 +107,14 @@ export class MediaPipeService {
         this.canvasCtx.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
         this.video.srcObject = null;
         this.toggleLoader(false);
-
+        setMessage('', 0);
         document.querySelectorAll('.user-media')?.forEach(el => el.classList.remove('tracking'));
         if (done) this.markAsDone(type);
         if (type == 'SEL') {
-            try { document.querySelector('#user-overlay')?.classList.remove('user-ok'); } catch (error) { }
+            try {
+                (document.querySelector('#user-overlay') as HTMLElement).style.scale = '0.7';
+                document.querySelector('#user-overlay')?.classList.remove('user-ok');
+            } catch (error) { }
             const isFaceClear = await this.postSelfieValidation();
             this.toggleLoader(false);
             if (isFaceClear) {
@@ -187,6 +190,7 @@ export class MediaPipeService {
     }
 
     __selfieChallenge = async () => {
+        let challengeTiming = 1500;
         const ccs = this.commonChallengeSet('SEL');
         if (!ccs) return;
         this.faceLandmarker.applyOptions({ runningMode: "VIDEO" });
@@ -199,15 +203,17 @@ export class MediaPipeService {
             ccs.time !== this.video.currentTime && (ccs.time = this.video.currentTime, ccs.results = this.faceLandmarker?.detectForVideo(this.video, Date.now()));// Send the video frame to the model.
             if (ccs.time > 0) {
                 document.querySelectorAll('.user-media')?.forEach(el => el.classList.add('tracking'));
+                if (!passSEL.faceClose) setMessage('Acercá tu cara al centro de la pantalla', 2.0);
                 if (ccs.results.faceLandmarks[0] && ccs.results.faceLandmarks[0][0] && ccs.results.faceLandmarks[0][0]?.x > 0.45 && ccs.results.faceLandmarks[0][0]?.x < 0.55 &&
                     ccs.results.faceLandmarks[0][0]?.y > 0.5 && ccs.results.faceLandmarks[0][0]?.y < 0.7 && !this.userChallenges['SEL'].done) {
-                    console.log(+ccs.results.faceLandmarks[0][0]?.z);
-                    if (!passSEL.faceClose && +ccs.results.faceLandmarks[0][0]?.z < (this.isMobile() ? -0.09 : -0.040)) { // ~0.03
-                        console.log('close done..');
+                    // console.log(+ccs.results.faceLandmarks[0][0]?.z);
+                    if (!passSEL.faceClose && +ccs.results.faceLandmarks[0][0]?.z < (this.isMobile() ? -0.09 : -0.035)) { // ~0.03
+                        setMessage('Perfecto, aguardá un segundo...', 2.1);
+                        c('close done..');
                         passSEL.faceClose = true;
-                        document.querySelector('#user-overlay')?.classList.add('user-ok');
-                        await new Promise((resolve, _) => setTimeout(() => resolve(null), 1000));
-                        document.querySelector('#user-overlay')?.classList.remove('user-ok');
+                        document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.add('user-ok'));
+                        await new Promise((resolve, _) => setTimeout(() => resolve(null), challengeTiming));
+                        document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.remove('user-ok'));
                         (document.querySelector('#user-overlay') as HTMLElement).style.scale = '0.6 0.5';
                         if (this.selfiePictures.close.taking) return;
                         console.warn('taking close selfie...');
@@ -217,27 +223,27 @@ export class MediaPipeService {
                             this.selfiePictures.close.taking = false;
                         });
                     }
+                    if (passSEL.faceClose && !passSEL.faceFar) setMessage('Ahora alejá tu cara un poco de la cámara.', 2.2);
 
                     if (passSEL.faceClose && !passSEL.faceFar && +ccs.results.faceLandmarks[0][0]?.z > (this.isMobile() ? -0.07 : -0.027)) { // ~0.02
-                        console.log('far done..');
-
+                        setMessage('Perfecto, un segundo más...', 2.3);
+                        c('far done..');
                         passSEL.faceFar = true;
-                        document.querySelector('#user-overlay')?.classList.add('user-ok');
-                        await new Promise((resolve, _) => setTimeout(() => resolve(null), 1000));
-
+                        document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.add('user-ok'));
+                        await new Promise((resolve, _) => setTimeout(() => resolve(null), challengeTiming));
                         if (this.selfiePictures.far.taking) return;
                         console.warn('taking close selfie...');
                         this.selfiePictures.far.taking = true;
-                        this.captureImage().then((img) => {
-                            (this.selfiePictures.far.raw as unknown) = img as Blob;
-                            this.selfiePictures.far.taking = false;
-                        });
+                        this.captureImage().then((img) => { (this.selfiePictures.far.raw as unknown) = img as Blob; this.selfiePictures.far.taking = false; });
 
-                        if (passSEL.faceClose && passSEL.faceFar) setTimeout(() => !this.userChallenges['SEL'].done && (this.userChallenges['SEL'].done = true), 1000);
-                        // setTimeout(() => !this.userChallenges['SEL'].done && (this.userChallenges['SEL'].done = true), 1000);
+                        if (passSEL.faceClose && passSEL.faceFar) {
+                            document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.remove('user-ok'));
+                            setTimeout(() => !this.userChallenges['SEL'].done && (this.userChallenges['SEL'].done = true), 1000);
+                        };
                     }
                 } else { try { } catch (error) { } }
-                if (this.userChallenges['SEL'].done) { this.captureImage().then((img) => { this.userPictures.selfie.raw = img as Blob; this.stopTracking(false, 'SEL'); }); return; };
+
+                if (this.userChallenges['SEL'].done) { setMessage('¡Listo!', 2.9); this.captureImage().then((img) => { this.userPictures.selfie.raw = img as Blob; this.stopTracking(false, 'SEL'); }); return; };
             }
             this.tracking == true && window.requestAnimationFrame(predictWebcam);
         }
@@ -292,17 +298,18 @@ export class MediaPipeService {
                 if (imageClassifierResult?.classifications.length) {
                     let clearFace = true;
                     imageClassifierResult.classifications[0].categories.filter((obj, i) => {
-                        if (unwanted.some(catName => obj.categoryName == catName) && obj.score > (this.isMobile() ? 0.02 : 0.01)) {
+                        if (unwanted.some(catName => obj.categoryName == catName) && obj.score > (this.isMobile() ? 0.05 : 0.05)) {
                             console.error('face is not clear!!!!');
                             clearFace = false;
                             resolve(clearFace);
                         } else { if (i == imageClassifierResult.classifications[0].categories.length - 1 && clearFace) resolve(clearFace); }
                     });
                 }
-                
+
             };
         });
     }
+
 
     // Utility to take pictures from video streams.
     captureImage(type?: 'SEL' | 'DOC') {
@@ -314,8 +321,8 @@ export class MediaPipeService {
                 this.canvasCtx.translate(0, this.canvasElement.height * mlr);
                 this.canvasCtx.rotate(-90 * Math.PI / 180);
                 this.canvasCtx.scale(1.3, 1.3);
-                this.canvasCtx.drawImage(this.video, 0, 0, this.video.videoWidth, this.video.videoHeight);
-            } else this.canvasCtx.drawImage(this.video, 0, 0, this.video.videoWidth, this.video.videoHeight);
+            }
+            this.canvasCtx.drawImage(this.video, 0, 0, this.video.videoWidth, this.video.videoHeight);
 
             this.canvasElement.toBlob((blob) => {
                 resolve(blob);

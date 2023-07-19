@@ -9,6 +9,18 @@ export function buildElement(tag: string, attributes: { [key: string]: string } 
     return element;
 }
 
+export function setMessage(message: string, step?: number) {
+    const messageElement = document.querySelector('#message');
+    if (!messageElement?.getAttribute('step') || messageElement?.getAttribute('step') != step?.toString()) {
+        if(step){
+            messageElement?.setAttribute('step', step.toString());
+        }
+        if (messageElement) {
+            messageElement.innerHTML = message;
+        }
+    }
+}
+
 @Injectable({ providedIn: 'root' })
 export class MLPOL {
     private mp = inject(MediaPipeService);
@@ -21,7 +33,7 @@ export class MLPOL {
             this.createInitialLayout();
         });
     }
-    
+
 
     private createInitialLayout() {
         // Main wraper.
@@ -32,10 +44,12 @@ export class MLPOL {
         const userVideo = buildElement('video', { class: 'user-media', id: 'user-video', autoplay: '', playsinline: '' });
         const userCanvas = buildElement('canvas', { class: 'user-media', id: 'user-canvas' });
         const userOverlay = buildElement('div', { class: 'user-media', id: 'user-overlay' });
+        const userMessage = buildElement('div', { class: 'user-media', id: 'user-message' }, [buildElement('span', {id: 'message'}, [document.createTextNode('')])]);
         const challengePage = buildElement('section', { class: 'challenge-page' });
         this.apendLayout(challengePage, userVideo);
         this.apendLayout(challengePage, userCanvas);
         this.apendLayout(challengePage, userOverlay);
+        this.apendLayout(challengePage, userMessage);
         this.apendLayout(document.body, challengePage);
 
         if (this.configs.brandConfig.logoSrc) {
