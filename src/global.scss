@@ -103,8 +103,8 @@ body {
     align-items: center;
 
     #message {
+        will-change: background-position-x;
         transition: .3s;
-        transition-delay: 0s;
         color: transparent;
         background-clip: text;
         -webkit-background-clip: text;
@@ -116,10 +116,12 @@ body {
 
         width: auto;
         position: relative;
+
         &::before {
+            will-change: background-position-x;
             content: " ";
             transition: .3s;
-            transition-delay: .3s;
+            transition-delay: .3s !important;
             background-image: linear-gradient(90deg, #7aaf2a 0%, #7aaf2a 50%, transparent 50%, transparent 100%);
             background-position-x: -100vw;
             background-size: 200vw;
@@ -134,15 +136,12 @@ body {
 
     &.user-ok {
         #message {
-            transition-delay: 0s;
             transition: 1.5s ease-in-out;
             background-position-x: 0vw;
 
             &::before {
-                transition-delay: .3s !important;
                 transition: 1.5s ease-in-out;
                 background-position-x: 0vw;
-
             }
         }
     }

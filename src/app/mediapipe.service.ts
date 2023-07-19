@@ -190,65 +190,37 @@ export class MediaPipeService {
     }
 
     __selfieChallenge = async () => {
-        let challengeTiming = 1500;
-        const ccs = this.commonChallengeSet('SEL');
-        if (!ccs) return;
+        const ccs = this.commonChallengeSet('SEL'); if (!ccs) return;
         this.faceLandmarker.applyOptions({ runningMode: "VIDEO" });
-        const passSEL = {
-            faceClose: false,
-            faceFar: false
-        }
+        const passSEL = { faceClose: false, faceFar: false }; const challengeTiming = 1500;
         let predictWebcam = async () => {
             this.canvasElement.width = this.video.videoWidth; this.canvasElement.height = this.video.videoHeight;
             ccs.time !== this.video.currentTime && (ccs.time = this.video.currentTime, ccs.results = this.faceLandmarker?.detectForVideo(this.video, Date.now()));// Send the video frame to the model.
             if (ccs.time > 0) {
-                document.querySelectorAll('.user-media')?.forEach(el => el.classList.add('tracking'));
-                if (!passSEL.faceClose) setMessage('Acercá tu cara al centro de la pantalla', 2.0);
+                if (!document.querySelector('.user-media')?.classList.contains('tracking')) document.querySelectorAll('.user-media')?.forEach(el => el.classList.add('tracking'));
+                if (!passSEL.faceClose && !passSEL.faceFar) setMessage('Acercá tu cara al centro de la pantalla', 2.0);
                 if (ccs.results.faceLandmarks[0] && ccs.results.faceLandmarks[0][0] && ccs.results.faceLandmarks[0][0]?.x > 0.45 && ccs.results.faceLandmarks[0][0]?.x < 0.55 &&
                     ccs.results.faceLandmarks[0][0]?.y > 0.5 && ccs.results.faceLandmarks[0][0]?.y < 0.7 && !this.userChallenges['SEL'].done) {
-                    // console.log(+ccs.results.faceLandmarks[0][0]?.z);
                     if (!passSEL.faceClose && +ccs.results.faceLandmarks[0][0]?.z < (this.isMobile() ? -0.09 : -0.035)) { // ~0.03
-                        setMessage('Perfecto, aguardá un segundo...', 2.1);
-                        c('close done..');
-                        passSEL.faceClose = true;
+                        setMessage('Perfecto, aguardá un segundo...', 2.1); c('close done..');
                         document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.add('user-ok'));
-                        await new Promise((resolve, _) => setTimeout(() => resolve(null), challengeTiming));
+                        passSEL.faceClose = true; await new Promise((resolve, _) => setTimeout(() => resolve(null), challengeTiming));
                         document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.remove('user-ok'));
                         (document.querySelector('#user-overlay') as HTMLElement).style.scale = '0.6 0.5';
-                        if (this.selfiePictures.close.taking) return;
-                        console.warn('taking close selfie...');
-                        this.selfiePictures.close.taking = true;
-                        this.captureImage().then((img) => {
-                            (this.selfiePictures.close.raw as unknown) = img as Blob;
-                            this.selfiePictures.close.taking = false;
-                        });
-                    }
-                    if (passSEL.faceClose && !passSEL.faceFar) setMessage('Ahora alejá tu cara un poco de la cámara.', 2.2);
-
-                    if (passSEL.faceClose && !passSEL.faceFar && +ccs.results.faceLandmarks[0][0]?.z > (this.isMobile() ? -0.07 : -0.027)) { // ~0.02
-                        setMessage('Perfecto, un segundo más...', 2.3);
-                        c('far done..');
-                        passSEL.faceFar = true;
+                        if (this.selfiePictures.close.taking) return; c('taking close selfie...'); this.selfiePictures.close.taking = true;
+                        this.captureImage().then((img) => { (this.selfiePictures.close.raw as unknown) = img as Blob; this.selfiePictures.close.taking = false; });
+                    }; if (passSEL.faceClose && !passSEL.faceFar) setMessage('Ahora alejá tu cara un poco de la cámara.', 2.2);
+                    if (passSEL.faceClose && !passSEL.faceFar && +ccs.results.faceLandmarks[0][0]?.z > (this.isMobile() ? -0.07 : -0.032)) { // ~0.02
+                        setMessage('Perfecto, un segundo más...', 2.3); c('far done..');
                         document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.add('user-ok'));
-                        await new Promise((resolve, _) => setTimeout(() => resolve(null), challengeTiming));
-                        if (this.selfiePictures.far.taking) return;
-                        console.warn('taking close selfie...');
-                        this.selfiePictures.far.taking = true;
+                        passSEL.faceFar = true; await new Promise((resolve, _) => setTimeout(() => resolve(null), challengeTiming));
+                        document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.remove('user-ok'));
+                        if (this.selfiePictures.far.taking) return; c('taking close selfie...'); this.selfiePictures.far.taking = true;
                         this.captureImage().then((img) => { (this.selfiePictures.far.raw as unknown) = img as Blob; this.selfiePictures.far.taking = false; });
-
-                        if (passSEL.faceClose && passSEL.faceFar) {
-                            document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.remove('user-ok'));
-                            setTimeout(() => !this.userChallenges['SEL'].done && (this.userChallenges['SEL'].done = true), 1000);
-                        };
-                    }
-                } else { try { } catch (error) { } }
-
-                if (this.userChallenges['SEL'].done) { setMessage('¡Listo!', 2.9); this.captureImage().then((img) => { this.userPictures.selfie.raw = img as Blob; this.stopTracking(false, 'SEL'); }); return; };
-            }
-            this.tracking == true && window.requestAnimationFrame(predictWebcam);
-        }
-        this.getUserMedia(predictWebcam, true);
-        c('👨‍💻 - challenge ready and running...');
+                    }; if (passSEL.faceClose && passSEL.faceFar) { setMessage('¡Listo!', 2.9); setTimeout(() => !this.userChallenges['SEL'].done && (this.userChallenges['SEL'].done = true), 1000) };
+                } else { setMessage('Acercá tu cara al centro de la pantalla', 2.0); }; if (this.userChallenges['SEL'].done) { this.captureImage().then((img) => { this.userPictures.selfie.raw = img as Blob; this.stopTracking(false, 'SEL'); }); return; };
+            }; this.tracking == true && window.requestAnimationFrame(predictWebcam);
+        }; this.getUserMedia(predictWebcam, true); c('👨‍💻 - challenge ready and running...');
     }
 
     __docChallenge = async () => {
