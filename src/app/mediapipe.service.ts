@@ -90,7 +90,7 @@ export class MediaPipeService {
 
     checkMediaAccess = () => (!(!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) || !this.faceLandmarker) && (console.warn("user media or ml model is not available"), this.toggleLoader(false), false);
 
-    getUserMedia = (predictWebcam: any, videoParams: any) => navigator.mediaDevices.getUserMedia({ video: { ...videoParams, width: { ideal: 1920, max: 1920 }, height: { ideal: 1080, max: 1080 } } }).then((stream) => (this.video.srcObject = stream, this.video.addEventListener("loadeddata", predictWebcam)));
+    getUserMedia = (predictWebcam: any, videoParams: any) => navigator.mediaDevices.getUserMedia({ video: { ...videoParams, frameRate: { min: 30, max: 30 } /*width: { ideal: 1920, max: 1920 }, height: { ideal: 1080, max: 1080 } */ } }).then((stream) => (this.video.srcObject = stream, this.video.addEventListener("loadeddata", predictWebcam)));
 
     preloadState = (type: 'POL' | 'SEL' | 'DOC' | 'KYC') => {
         this.toggleLoader(true);
@@ -193,32 +193,44 @@ export class MediaPipeService {
         const ccs = this.commonChallengeSet('SEL'); if (!ccs) return;
         this.faceLandmarker.applyOptions({ runningMode: "VIDEO" });
         const passSEL = { faceClose: false, faceFar: false }; const challengeTiming = 1500;
+        let now = -1; const processTiming = 1.0/*1.0-0.5*/; let layerMounted = false;
         let predictWebcam = async () => {
-            this.canvasElement.width = this.video.videoWidth; this.canvasElement.height = this.video.videoHeight;
-            ccs.time !== this.video.currentTime && (ccs.time = this.video.currentTime, ccs.results = this.faceLandmarker?.detectForVideo(this.video, Date.now()));// Send the video frame to the model.
-            if (ccs.time > 0) {
-                if (!document.querySelector('.user-media')?.classList.contains('tracking')) document.querySelectorAll('.user-media')?.forEach(el => el.classList.add('tracking'));
+            ccs.time !== this.video.currentTime && (ccs.time = this.video.currentTime/*, ccs.results = this.faceLandmarker?.detectForVideo(this.video, Date.now())*/);// Send the video frame to the model.
+            if (ccs.time > 0 && now !== Math.round(ccs.time) * processTiming) {
+                now = Math.round(ccs.time) * processTiming;
+                console.log(now)
+                this.canvasElement.width = this.video.videoWidth; this.canvasElement.height = this.video.videoHeight;
+                ccs.results = this.faceLandmarker?.detectForVideo(this.video, Date.now());
+                if (!layerMounted) { document.querySelectorAll('.user-media')?.forEach(el => el.classList.add('tracking')); layerMounted = true; }
                 if (!passSEL.faceClose && !passSEL.faceFar) setMessage('Acercá tu cara al centro de la pantalla', 2.0);
                 if (ccs.results.faceLandmarks[0] && ccs.results.faceLandmarks[0][0] && ccs.results.faceLandmarks[0][0]?.x > 0.45 && ccs.results.faceLandmarks[0][0]?.x < 0.55 &&
                     ccs.results.faceLandmarks[0][0]?.y > 0.5 && ccs.results.faceLandmarks[0][0]?.y < 0.7 && !this.userChallenges['SEL'].done) {
-                    if (!passSEL.faceClose && +ccs.results.faceLandmarks[0][0]?.z < (this.isMobile() ? -0.09 : -0.035)) { // ~0.03
-                        setMessage('Perfecto, aguardá un segundo...', 2.1); c('close done..');
-                        document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.add('user-ok'));
-                        passSEL.faceClose = true; await new Promise((resolve, _) => setTimeout(() => resolve(null), challengeTiming));
-                        document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.remove('user-ok'));
-                        (document.querySelector('#user-overlay') as HTMLElement).style.scale = '0.6 0.5';
-                        if (this.selfiePictures.close.taking) return; c('taking close selfie...'); this.selfiePictures.close.taking = true;
-                        this.captureImage().then((img) => { (this.selfiePictures.close.raw as unknown) = img as Blob; this.selfiePictures.close.taking = false; });
-                    }; if (passSEL.faceClose && !passSEL.faceFar) setMessage('Ahora alejá tu cara un poco de la cámara.', 2.2);
-                    if (passSEL.faceClose && !passSEL.faceFar && +ccs.results.faceLandmarks[0][0]?.z > (this.isMobile() ? -0.07 : -0.032)) { // ~0.02
-                        setMessage('Perfecto, un segundo más...', 2.3); c('far done..');
-                        document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.add('user-ok'));
-                        passSEL.faceFar = true; await new Promise((resolve, _) => setTimeout(() => resolve(null), challengeTiming));
-                        document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.remove('user-ok'));
-                        if (this.selfiePictures.far.taking) return; c('taking close selfie...'); this.selfiePictures.far.taking = true;
-                        this.captureImage().then((img) => { (this.selfiePictures.far.raw as unknown) = img as Blob; this.selfiePictures.far.taking = false; });
-                    }; if (passSEL.faceClose && passSEL.faceFar) { setMessage('¡Listo!', 2.9); setTimeout(() => !this.userChallenges['SEL'].done && (this.userChallenges['SEL'].done = true), 1000) };
-                } else { setMessage('Acercá tu cara al centro de la pantalla', 2.0); }; if (this.userChallenges['SEL'].done) { this.captureImage().then((img) => { this.userPictures.selfie.raw = img as Blob; this.stopTracking(false, 'SEL'); }); return; };
+                    console.log(+ccs.results.faceLandmarks[0][0]?.z);
+                    if (!passSEL.faceClose) {
+                        if (+ccs.results.faceLandmarks[0][0]?.z < (this.isMobile() ? -0.07 : -0.034)) { // ~0.03
+                            setMessage('Perfecto, aguardá un segundo...', 2.1); c('close done..');
+                            document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.add('user-ok'));
+                            passSEL.faceClose = true; await new Promise((resolve, _) => setTimeout(() => resolve(null), challengeTiming));
+                            document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.remove('user-ok'));
+                            (document.querySelector('#user-overlay') as HTMLElement).style.scale = '0.6 0.5';
+                            if (this.selfiePictures.close.taking) return; c('taking close selfie...'); this.selfiePictures.close.taking = true;
+                            this.captureImage().then((img) => { (this.selfiePictures.close.raw as unknown) = img as Blob; this.selfiePictures.close.taking = false; });
+                        };
+                    }
+                    // if (passSEL.faceClose && !passSEL.faceFar) 
+                    if (passSEL.faceClose && !passSEL.faceFar) {
+                        setMessage('Ahora alejá tu cara un poco de la cámara.', 2.2);
+                        if (+ccs.results.faceLandmarks[0][0]?.z > (this.isMobile() ? -0.07 : -0.032)) { // ~0.02
+                            setMessage('Bien, un segundo más...', 2.3); c('far done..');
+                            document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.add('user-ok'));
+                            passSEL.faceFar = true; await new Promise((resolve, _) => setTimeout(() => resolve(null), challengeTiming));
+                            document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.remove('user-ok'));
+                            if (this.selfiePictures.far.taking) return; c('taking close selfie...'); this.selfiePictures.far.taking = true;
+                            this.captureImage().then((img) => { (this.selfiePictures.far.raw as unknown) = img as Blob; this.selfiePictures.far.taking = false; });
+                        };
+                    }
+                    if (passSEL.faceClose && passSEL.faceFar) { setMessage('¡Listo!', 2.9); setTimeout(() => !this.userChallenges['SEL'].done && (this.userChallenges['SEL'].done = true), 1000) };
+                } else { }; if (this.userChallenges['SEL'].done) { this.captureImage().then((img) => { this.userPictures.selfie.raw = img as Blob; this.stopTracking(false, 'SEL'); }); return; };
             }; this.tracking == true && window.requestAnimationFrame(predictWebcam);
         }; this.getUserMedia(predictWebcam, true); c('👨‍💻 - challenge ready and running...');
     }
@@ -342,6 +354,7 @@ export class MediaPipeService {
             const drawingUtils = new DrawingUtils(ctx!);
             const mlr = this.isMobile() ? type == 'SEL' ? 3.8 : 2.4 : 1;
             if (this.isMobile()) canvas.classList.add('is-mobile');
+            // if (type == 'SEL' && this.isMobile()) ctx!.scale(0.15, 0.15); else ctx!.scale(1, 1);
 
             let picture = new Image();
             picture.src = URL.createObjectURL(imageParam!);
@@ -366,8 +379,10 @@ export class MediaPipeService {
                         canvas.width = picture.width; canvas.height = picture.height;
                         ctx!.globalCompositeOperation = 'source-over';
 
-                        if (type == 'SEL') { ctx!.filter = 'grayscale(100%) contrast(80%) brightness(120%)'; /*ctx!.scale(0.8, 0.8);*/ }
+                        if (type == 'SEL') { ctx!.filter = 'grayscale(100%) contrast(80%) brightness(120%)'; }
                         if (type == 'DOC') { ctx!.filter = 'grayscale(100%)'; /*ctx!.scale(1, 1);*/ }
+                        // ctx!.filter = 'brightness(0%)';
+                        if (type == 'SEL' && this.isMobile()) ctx!.scale(0.8, 0.8); else ctx!.scale(1, 1);
 
                         const faceTight = type == 'SEL' && !this.isMobile() ? picture.width * 0.10 : 0; // ~10% of the picture width to fit the face tightly.
                         ctx!.drawImage(picture, 0, 0, type == 'SEL' ? picture.width * 0.8 : picture.width, type == 'SEL' ? picture.height * 0.8 : picture.height);
@@ -375,9 +390,20 @@ export class MediaPipeService {
                         ctx!.drawImage(landmarkImage, faceTight * 0.9, 0, (type == 'SEL' ? picture.width * 0.8 : picture.width) - (faceTight * 2), type == 'SEL' ? picture.height * 0.8 : picture.height);
 
                         canvas.toBlob((maskedBlob) => {
+                            // ctx!.globalCompositeOperation = 'source-over';
+                            // ctx!.filter = 'brightness(0%)';
                             let masked = new Image();
                             masked.src = URL.createObjectURL(maskedBlob!);
                             masked.onload = () => {
+                                // Drawing tesselation above the masked images.
+                                // ctx!.filter = 'none';
+                                // const landmarksMasked = this.faceLandmarker.detect(masked);
+                                // if (type == 'SEL' && this.isMobile()) ctx!.scale(0.8, 0.8); else ctx!.scale(1, 1);
+                                // drawingUtils.drawConnectors(landmarks.faceLandmarks[0], FaceLandmarker.FACE_LANDMARKS_TESSELATION, { color: "#FF0000", lineWidth: 0.5 });
+                                // canvas.toBlob((maskedLandmarkBlob) => {
+                                //     let mlb = new Image();
+                                //     mlb.src = URL.createObjectURL(maskedLandmarkBlob!);
+                                //     mlb.onload = () => {
                                 if (type == 'SEL') {
                                     this.userPictures.selfie.masked = masked!;
                                     resolve(masked!); // complete promise.
@@ -388,6 +414,9 @@ export class MediaPipeService {
                                     resolve(masked!); // complete promise.
                                     if (this.devMode) this.base64FromBlob(maskedBlob!);
                                 }
+                                //     };
+                                // });
+
                             }
                         });
                     }
