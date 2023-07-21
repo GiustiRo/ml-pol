@@ -47,14 +47,16 @@ export class MediaPipeService {
         /*TODO*/head: { id: 'headMovement', label: 'Move your head', challenge: false, done: false },
     }
 
-    private userPictures: { doc: { raw: Blob | undefined, masked: HTMLImageElement | undefined }, selfie: { raw: Blob | undefined, masked: HTMLImageElement | undefined } } = {
+    private userPictures: { doc: { raw: Blob | undefined, masked: HTMLImageElement | undefined, buffer?: any[] }, selfie: { raw: Blob | undefined, masked: HTMLImageElement | undefined, buffer?: any[] } } = {
         doc: {
             raw: undefined,
-            masked: undefined
+            masked: undefined,
+            buffer: []
         },
         selfie: {
             raw: undefined,
-            masked: undefined
+            masked: undefined,
+            buffer: []
         }
     }
 
@@ -66,6 +68,7 @@ export class MediaPipeService {
     constructor() { }
 
     async initMP(): Promise<FaceLandmarker> {
+
         return this.faceLandmarker = await FaceLandmarker.createFromOptions(await FilesetResolver.forVisionTasks(this.wasmUrl), {
             baseOptions: { modelAssetPath: this.modelsPaths.faceLandmarker, delegate: "GPU" },
             outputFaceBlendshapes: true, runningMode: "VIDEO", outputFacialTransformationMatrixes: true
@@ -205,9 +208,10 @@ export class MediaPipeService {
                 if (!passSEL.faceClose && !passSEL.faceFar) setMessage('Acercá tu cara al centro de la pantalla', 2.0);
                 if (ccs.results.faceLandmarks[0] && ccs.results.faceLandmarks[0][0] && ccs.results.faceLandmarks[0][0]?.x > 0.45 && ccs.results.faceLandmarks[0][0]?.x < 0.55 &&
                     ccs.results.faceLandmarks[0][0]?.y > 0.5 && ccs.results.faceLandmarks[0][0]?.y < 0.7 && !this.userChallenges['SEL'].done) {
-                    console.log(+ccs.results.faceLandmarks[0][0]?.z);
+                    console.log('z: ', +ccs.results.faceLandmarks[0][0]?.z);
+                    // console.log(ccs.results.faceLandmarks[0]);
                     if (!passSEL.faceClose) {
-                        if (+ccs.results.faceLandmarks[0][0]?.z < (this.isMobile() ? -0.07 : -0.034)) { // ~0.03
+                        if (+ccs.results.faceLandmarks[0][0]?.z < (this.isMobile() ? -0.07 : -0.035)) { // ~0.03
                             setMessage('Perfecto, aguardá un segundo...', 2.1); c('close done..');
                             document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.add('user-ok'));
                             passSEL.faceClose = true; await new Promise((resolve, _) => setTimeout(() => resolve(null), challengeTiming));
@@ -220,7 +224,7 @@ export class MediaPipeService {
                     // if (passSEL.faceClose && !passSEL.faceFar) 
                     if (passSEL.faceClose && !passSEL.faceFar) {
                         setMessage('Ahora alejá tu cara un poco de la cámara.', 2.2);
-                        if (+ccs.results.faceLandmarks[0][0]?.z > (this.isMobile() ? -0.07 : -0.032)) { // ~0.02
+                        if (+ccs.results.faceLandmarks[0][0]?.z > (this.isMobile() ? -0.07 : -0.033)) { // ~0.02
                             setMessage('Bien, un segundo más...', 2.3); c('far done..');
                             document.querySelectorAll('#user-overlay, #user-message')?.forEach(el => el.classList.add('user-ok'));
                             passSEL.faceFar = true; await new Promise((resolve, _) => setTimeout(() => resolve(null), challengeTiming));
@@ -331,13 +335,18 @@ export class MediaPipeService {
             console.warn('MASK COMPOSED: ', type);
             this.toggleLoader(false);
             if (this.userPictures.selfie.masked != undefined && this.userPictures.doc.masked != undefined) {
+                const eDistance = this.euclideanDistance(this.userPictures.doc.buffer!, this.userPictures.selfie.buffer!);
+                const mDistance = this.manhattanDistance(this.userPictures.doc.buffer!, this.userPictures.selfie.buffer!);
+                // return;
                 c('both masked images are ready to be compared');
                 this.imageEmbedder.applyOptions({ runningMode: "IMAGE" });
-                const selfieEmbed = this.imageEmbedder.embed(this.userPictures.selfie.masked);
-                const docEmbed = this.imageEmbedder.embed(this.userPictures.doc.masked);
+                const selfieEmbed = this.imageEmbedder.embed(this.userPictures.selfie.masked!);
+                const docEmbed = this.imageEmbedder.embed(this.userPictures.doc.masked!);
                 const similarity = ImageEmbedder.cosineSimilarity(selfieEmbed!.embeddings[0], docEmbed!.embeddings[0]);
-                c('masks compared w similarity: ' + similarity);
-                if (this.devMode) this.toggleDevData('SELvsDOC', { similarity: similarity?.toString()?.substring(0, 5) });
+                console.log(similarity);
+                const overalMatch = (eDistance + similarity + similarity) / 3;
+                c('OVERAL FACES MATCH::: ' + overalMatch);
+                if (this.devMode) this.toggleDevData('SELvsDOC', { similarity: overalMatch?.toString()?.substring(0, 5) });
                 if (similarity > 0.8) { console.log('Match'); }
             } else c('one or both masked images are not ready to be compared' + this.userPictures.selfie.masked + this.userPictures.doc.masked);
         }
@@ -366,6 +375,8 @@ export class MediaPipeService {
                     this.markAsFailed(type);
                     return;
                 };
+                this.userPictures[type == 'SEL' ? 'selfie' : 'doc'].buffer = landmarks.faceLandmarks[0];
+                // if (type == 'SEL') this.userPictures.selfie.buffer = landmarks.faceLandmarks[0];
                 this.markAsDone(type);
                 console.log('Generating Landmarks from saved picture...', landmarks);
                 canvas.width = picture.width; canvas.height = picture.height;
@@ -470,5 +481,76 @@ export class MediaPipeService {
         const reader = new FileReader();
         reader.onloadend = () => { console.log('👨‍💻 - image captured!', reader.result); };
         reader.readAsDataURL(blob!);
+    }
+
+    // Write a compare function that returns a score between 0 and 1. It will compare two arrays with objetcs {x: number, y:number, z:number}:
+    compare = (a: any, b: any) => {
+        const distance = Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2) + Math.pow(a.z - b.z, 2));
+        return distance < 0.1 ? 1 : 0;
+    }
+
+    manhattanDistance(a1: any, a2: any) {
+        function manhattanDistance(obj1:any, obj2:any) {
+            return Math.abs(obj1.x - obj2.x) + Math.abs(obj1.y - obj2.y) + Math.abs(obj1.z - obj2.z);
+          }
+          
+          function compareArrays(array1:any, array2:any) {
+            if (array1.length !== array2.length) {
+              throw new Error("Arrays must have the same length.");
+            }
+          
+            let totalDistance = 0;
+          
+            for (let i = 0; i < array1.length; i++) {
+              const distance = manhattanDistance(array1[i], array2[i]);
+              totalDistance += distance;
+            }
+          
+            // Normalize the distance to get a score between 0 and 1.
+            const maxDistance = 3 * array1.length;
+            const score = 1 - (totalDistance / maxDistance);
+          
+            return score;
+          }         
+          
+          const similarityScore = compareArrays(a1, a2);
+          console.log(similarityScore); // Output will be a score between 0 and 1.          
+          return similarityScore;
+          
+    }
+    euclideanDistance(a1: any, a2: any) {
+        c('Calculating euclidean......................')
+        // console.log(array1, array2);
+        function euclideanDistance(obj1: any, obj2: any) {
+            const distance = Math.sqrt(
+                Math.pow(obj1.x - obj2.x, 2) +
+                Math.pow(obj1.y - obj2.y, 2) +
+                Math.pow(obj1.z - obj2.z, 2)
+            );
+            return distance;
+        }
+
+        function compareArrays(array1: any, array2: any) {
+            if (array1.length !== array2.length) {
+                throw new Error("Arrays must have the same length.");
+            }
+
+            let totalDistance = 0;
+
+            for (let i = 0; i < array1.length; i++) {
+                const distance = euclideanDistance(array1[i], array2[i]);
+                totalDistance += distance;
+            }
+
+            // Normalize the distance to get a score between 0 and 1.
+            const maxDistance = Math.sqrt(3 * Math.pow(array1.length, 2));
+            const score = 1 - (totalDistance / maxDistance);
+
+            return score;
+        }
+
+        const similarityScore = compareArrays(a1, a2);
+        console.log(similarityScore); // Output will be a score between 0 and 1.
+        return similarityScore;
     }
 }
