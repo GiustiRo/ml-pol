@@ -3,6 +3,7 @@ import { Category, DrawingUtils, FaceLandmarker, FilesetResolver, ImageClassifie
 import { buildElement, setMessage } from './MLPOL';
 
 const c = (msg: any) => console.log('👨‍💻 - ' + msg);
+type userPictureType = { raw: Blob | undefined, masked: HTMLImageElement | undefined, buffer?: any[], matrix?: any[] };
 
 @Injectable({ providedIn: 'root' })
 export class MediaPipeService {
@@ -47,16 +48,18 @@ export class MediaPipeService {
         /*TODO*/head: { id: 'headMovement', label: 'Move your head', challenge: false, done: false },
     }
 
-    private userPictures: { doc: { raw: Blob | undefined, masked: HTMLImageElement | undefined, buffer?: any[] }, selfie: { raw: Blob | undefined, masked: HTMLImageElement | undefined, buffer?: any[] } } = {
+    private userPictures: { doc: userPictureType, selfie: userPictureType } = {
         doc: {
             raw: undefined,
             masked: undefined,
-            buffer: []
+            buffer: [],
+            matrix: [],
         },
         selfie: {
             raw: undefined,
             masked: undefined,
-            buffer: []
+            buffer: [],
+            matrix: []
         }
     }
 
@@ -201,7 +204,9 @@ export class MediaPipeService {
             ccs.time !== this.video.currentTime && (ccs.time = this.video.currentTime/*, ccs.results = this.faceLandmarker?.detectForVideo(this.video, Date.now())*/);// Send the video frame to the model.
             if (ccs.time > 0 && now !== Math.round(ccs.time) * processTiming) {
                 now = Math.round(ccs.time) * processTiming;
-                console.log(now)
+                console.log(now);
+                console.log(ccs.results);
+
                 this.canvasElement.width = this.video.videoWidth; this.canvasElement.height = this.video.videoHeight;
                 ccs.results = this.faceLandmarker?.detectForVideo(this.video, Date.now());
                 if (!layerMounted) { document.querySelectorAll('.user-media')?.forEach(el => el.classList.add('tracking')); layerMounted = true; }
@@ -209,7 +214,6 @@ export class MediaPipeService {
                 if (ccs.results.faceLandmarks[0] && ccs.results.faceLandmarks[0][0] && ccs.results.faceLandmarks[0][0]?.x > 0.45 && ccs.results.faceLandmarks[0][0]?.x < 0.55 &&
                     ccs.results.faceLandmarks[0][0]?.y > 0.5 && ccs.results.faceLandmarks[0][0]?.y < 0.7 && !this.userChallenges['SEL'].done) {
                     console.log('z: ', +ccs.results.faceLandmarks[0][0]?.z);
-                    // console.log(ccs.results.faceLandmarks[0]);
                     if (!passSEL.faceClose) {
                         if (+ccs.results.faceLandmarks[0][0]?.z < (this.isMobile() ? -0.07 : -0.035)) { // ~0.03
                             setMessage('Perfecto, aguardá un segundo...', 2.1); c('close done..');
@@ -335,16 +339,21 @@ export class MediaPipeService {
             console.warn('MASK COMPOSED: ', type);
             this.toggleLoader(false);
             if (this.userPictures.selfie.masked != undefined && this.userPictures.doc.masked != undefined) {
-                const eDistance = this.euclideanDistance(this.userPictures.doc.buffer!, this.userPictures.selfie.buffer!);
-                const mDistance = this.manhattanDistance(this.userPictures.doc.buffer!, this.userPictures.selfie.buffer!);
+                const eDistanceBuffer = this.euclideanDistance(this.userPictures.doc.buffer!, this.userPictures.selfie.buffer!);
+                const eDistanceMatrix = this.euclideanFromMatrix(this.userPictures.doc.matrix!, this.userPictures.selfie.matrix!);
+
+                // const mDistanceBuffer = this.manhattanDistance(this.userPictures.doc.buffer!, this.userPictures.selfie.buffer!);
+                // const mDistanceMatrix = this.manhattanDistance(this.userPictures.doc.matrix!, this.userPictures.selfie.matrix!);
+
                 // return;
+                console.log(eDistanceBuffer, eDistanceMatrix);
                 c('both masked images are ready to be compared');
                 this.imageEmbedder.applyOptions({ runningMode: "IMAGE" });
                 const selfieEmbed = this.imageEmbedder.embed(this.userPictures.selfie.masked!);
                 const docEmbed = this.imageEmbedder.embed(this.userPictures.doc.masked!);
                 const similarity = ImageEmbedder.cosineSimilarity(selfieEmbed!.embeddings[0], docEmbed!.embeddings[0]);
                 console.log(similarity);
-                const overalMatch = (eDistance + similarity + similarity) / 3;
+                const overalMatch = (eDistanceBuffer + eDistanceMatrix + similarity + similarity) / 4;
                 c('OVERAL FACES MATCH::: ' + overalMatch);
                 if (this.devMode) this.toggleDevData('SELvsDOC', { similarity: overalMatch?.toString()?.substring(0, 5) });
                 if (similarity > 0.8) { console.log('Match'); }
@@ -375,7 +384,10 @@ export class MediaPipeService {
                     this.markAsFailed(type);
                     return;
                 };
-                this.userPictures[type == 'SEL' ? 'selfie' : 'doc'].buffer = landmarks.faceLandmarks[0];
+                this.userPictures[type == 'SEL' ? 'selfie' : 'doc'].buffer = landmarks.faceLandmarks![0];
+                this.userPictures[type == 'SEL' ? 'selfie' : 'doc'].matrix = landmarks.facialTransformationMatrixes![0].data;
+                console.log(landmarks);
+                console.log(landmarks.facialTransformationMatrixes![0].data);
                 // if (type == 'SEL') this.userPictures.selfie.buffer = landmarks.faceLandmarks[0];
                 this.markAsDone(type);
                 console.log('Generating Landmarks from saved picture...', landmarks);
@@ -490,33 +502,33 @@ export class MediaPipeService {
     }
 
     manhattanDistance(a1: any, a2: any) {
-        function manhattanDistance(obj1:any, obj2:any) {
+        function manhattanDistance(obj1: any, obj2: any) {
             return Math.abs(obj1.x - obj2.x) + Math.abs(obj1.y - obj2.y) + Math.abs(obj1.z - obj2.z);
-          }
-          
-          function compareArrays(array1:any, array2:any) {
+        }
+
+        function compareArrays(array1: any, array2: any) {
             if (array1.length !== array2.length) {
-              throw new Error("Arrays must have the same length.");
+                throw new Error("Arrays must have the same length.");
             }
-          
+
             let totalDistance = 0;
-          
+
             for (let i = 0; i < array1.length; i++) {
-              const distance = manhattanDistance(array1[i], array2[i]);
-              totalDistance += distance;
+                const distance = manhattanDistance(array1[i], array2[i]);
+                totalDistance += distance;
             }
-          
+
             // Normalize the distance to get a score between 0 and 1.
             const maxDistance = 3 * array1.length;
             const score = 1 - (totalDistance / maxDistance);
-          
+
             return score;
-          }         
-          
-          const similarityScore = compareArrays(a1, a2);
-          console.log(similarityScore); // Output will be a score between 0 and 1.          
-          return similarityScore;
-          
+        }
+
+        const similarityScore = compareArrays(a1, a2);
+        console.log(similarityScore); // Output will be a score between 0 and 1.          
+        return similarityScore;
+
     }
     euclideanDistance(a1: any, a2: any) {
         c('Calculating euclidean......................')
@@ -550,6 +562,49 @@ export class MediaPipeService {
         }
 
         const similarityScore = compareArrays(a1, a2);
+        console.log(similarityScore); // Output will be a score between 0 and 1.
+        return similarityScore;
+    }
+    euclideanFromMatrix(a1: any, a2: any) {
+        function dotProduct(arr1:any, arr2:any) {
+            if (arr1.length !== arr2.length) {
+                throw new Error("Arrays must have the same length.");
+            }
+
+            let sum = 0;
+            for (let i = 0; i < arr1.length; i++) {
+                sum += arr1[i] * arr2[i];
+            }
+            return sum;
+        }
+
+        function magnitude(arr:any) {
+            let sum = 0;
+            for (let i = 0; i < arr.length; i++) {
+                sum += arr[i] * arr[i];
+            }
+            return Math.sqrt(sum);
+        }
+
+        function cosineSimilarity(arr1:any, arr2:any) {
+            if (arr1.length !== arr2.length) {
+                throw new Error("Arrays must have the same length.");
+            }
+
+            const dotProd = dotProduct(arr1, arr2);
+            const mag1 = magnitude(arr1);
+            const mag2 = magnitude(arr2);
+
+            if (mag1 === 0 || mag2 === 0) {
+                return 0; // Avoid division by zero
+            }
+
+            const similarity = dotProd / (mag1 * mag2);
+            return similarity;
+        }
+
+
+        const similarityScore = cosineSimilarity(a1, a2);
         console.log(similarityScore); // Output will be a score between 0 and 1.
         return similarityScore;
     }
